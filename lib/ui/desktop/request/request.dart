@@ -17,10 +17,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:date_format/date_format.dart';
-import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_desktop_context_menu/flutter_desktop_context_menu.dart';
+import 'package:proxypin/ui/component/context_menu.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/bin/server.dart';
@@ -28,8 +28,9 @@ import 'package:proxypin/network/components/manager/script_manager.dart';
 import 'package:proxypin/network/channel/host_port.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/http/http_client.dart';
+import 'package:proxypin/network/util/cache.dart';
 import 'package:proxypin/storage/favorites.dart';
-import 'package:proxypin/ui/component/app_dialog.dart';
+import 'package:proxypin/ui/component/multi_select_controller.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/component/widgets.dart';
@@ -52,6 +53,7 @@ import '../common.dart';
 /// 请求 URI
 /// @author wanghongen
 /// 2023/10/8
+// ignore: must_be_immutable
 class RequestWidget extends StatefulWidget {
   final int index;
   final HttpRequest request;
@@ -61,42 +63,103 @@ class RequestWidget extends StatefulWidget {
   final ProxyServer proxyServer;
   final Function(RequestWidget)? remove;
   final Widget? trailing;
+  final MultiSelectController multiSelectController;
+  final RequestSelectionHandlers selectionHandlers;
+  final Function(VoidCallback refresh)? onMount;
+  final VoidCallback? onUnmount;
+
+  VoidCallback? _refresh;
 
   RequestWidget(this.request,
-      {Key? key, required this.proxyServer, this.remove, this.displayDomain = true, this.trailing, required this.index})
-      : super(key: GlobalKey<_RequestWidgetState>());
+      {super.key,
+      required this.proxyServer,
+      this.remove,
+      this.displayDomain = true,
+      this.trailing,
+      required this.selectionHandlers,
+      required this.index,
+      required this.multiSelectController,
+      this.onMount,
+      this.onUnmount});
 
   @override
   State<RequestWidget> createState() => _RequestWidgetState();
 
   void setResponse(HttpResponse response) {
     this.response.set(response);
-    var state = key as GlobalKey<_RequestWidgetState>;
-    state.currentState?.changeState();
+    _refresh?.call();
+  }
+
+  void changeState() {
+    _refresh?.call();
+  }
+
+  static void removeAutoReadByIds(Iterable<String> requestIds) {
+    _RequestWidgetState.removeAutoReadByIds(requestIds);
   }
 }
 
 class _RequestWidgetState extends State<RequestWidget> {
-  //选择的节点
-  static _RequestWidgetState? selectedState;
+  //当前选中的请求ID。使用ID而非State保存，避免列表项在新增请求或回收重建后选中状态丢失
+  static final ValueNotifier<String?> selectedRequestId = ValueNotifier<String?>(null);
 
-  static Set<String> autoReadRequests = <String>{};
+  static LruCacheSet<String> autoReadRequests = LruCacheSet<String>(5000);
 
-  bool selected = false;
+  static bool markAutoRead(String requestId) {
+    return autoReadRequests.add(requestId);
+  }
+
+  static void removeAutoReadByIds(Iterable<String> requestIds) {
+    autoReadRequests.removeAll(requestIds);
+  }
 
   Color? highlightColor; //高亮颜色
 
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
+  bool get selectionMode => widget.multiSelectController.isSelectionMode;
+
+  int get selectionCount => widget.multiSelectController.selectedCount;
+
+  bool _selected = false;
+
   @override
   void initState() {
     super.initState();
+    //列表项可能在新增请求或回收后重建，选中状态需从共享ID恢复
+    _selected = selectedRequestId.value == widget.request.requestId;
+    selectedRequestId.addListener(_onSelectionChanged);
+    widget._refresh = () => setState(() {});
+    widget.onMount?.call(widget.changeState);
+  }
+
+  @override
+  void dispose() {
+    widget.onUnmount?.call();
+    selectedRequestId.removeListener(_onSelectionChanged);
+    widget._refresh = null;
+    super.dispose();
+  }
+
+  ///仅在自身选中状态变化时刷新，避免选中切换时全量重建列表
+  void _onSelectionChanged() {
+    if (!mounted) {
+      return;
+    }
+    final isSelected = selectedRequestId.value == widget.request.requestId;
+    if (isSelected == _selected) {
+      return;
+    }
+    setState(() {
+      _selected = isSelected;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     var request = widget.request;
     var response = widget.response.get() ?? request.response;
+    var operationName = request.graphqlOperationName;
     String path = widget.displayDomain ? request.domainPath : request.path;
     String title = '${request.method.name} $path';
 
@@ -105,17 +168,28 @@ class _RequestWidgetState extends State<RequestWidget> {
     var packagesSize = getPackagesSize(request, response);
 
     var requestColor = color(path);
-
+    bool selectedInSelectionMode = widget.multiSelectController.contains(request.requestId);
     return GestureDetector(
-        onSecondaryTap: contextualMenu,
+        onLongPress: () {
+          if (!selectionMode) {
+            widget.multiSelectController.enterSelectionMode(widget.request.requestId);
+          }
+        },
+        onSecondaryTapDown: (details) => contextualMenu(details),
         child: ListTile(
             minLeadingWidth: 5,
             textColor: requestColor,
             selectedColor: requestColor,
-            selectedTileColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-            leading: getIcon(widget.response.get() ?? widget.request.response, color: requestColor),
+            selectedTileColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+            leading: _leading(requestColor),
             trailing: widget.trailing,
-            title: Text(title.fixAutoLines(), overflow: TextOverflow.ellipsis, maxLines: 2),
+            title: Text.rich(
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                TextSpan(children: [
+                  TextSpan(text: title.fixAutoLines()),
+                  if (operationName != null) graphqlOperationSpan(request, fixAutoLines: true)!,
+                ])),
             subtitle: Container(
                 padding: const EdgeInsets.only(top: 3),
                 child: Text.rich(
@@ -129,11 +203,27 @@ class _RequestWidgetState extends State<RequestWidget> {
                             style: const TextStyle(fontSize: 11, color: Colors.grey))
                       ],
                     ))),
-            selected: selected,
+            selected: _selected || selectedInSelectionMode,
             dense: true,
             visualDensity: const VisualDensity(vertical: -4),
-            contentPadding: const EdgeInsets.only(left: 28),
+            contentPadding: EdgeInsets.only(left: selectedInSelectionMode ? 6 : 28),
             onTap: onClick));
+  }
+
+  Widget _leading(Color? requestColor) {
+    bool selectedInSelectionMode = widget.multiSelectController.contains(widget.request.requestId);
+
+    var icon = getIcon(widget.response.get() ?? widget.request.response, color: requestColor);
+    if (!selectedInSelectionMode) {
+      return icon;
+    }
+
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(selectedInSelectionMode ? Icons.check_box_outlined : Icons.check_box_outline_blank_outlined,
+          size: 18, color: selectedInSelectionMode ? Theme.of(context).colorScheme.primary : Colors.grey),
+      const SizedBox(width: 4),
+      icon,
+    ]);
   }
 
   Color? color(String url) {
@@ -149,193 +239,261 @@ class _RequestWidgetState extends State<RequestWidget> {
     return autoReadRequests.contains(widget.request.requestId) ? Colors.grey : null;
   }
 
-  void changeState() {
-    setState(() {});
+  void contextualMenu(TapDownDetails details) {
+    var menu = selectionMode && selectionCount > 1 ? _batchMenu() : _requestMenu();
+    showCustomContextMenu(context, details.globalPosition, menu);
   }
 
-  void contextualMenu() {
-    Menu menu = Menu(items: [
-      MenuItem(
-          label: localizations.copyUrl,
-          onClick: (_) {
-            var requestUrl = widget.request.requestUrl;
-            Clipboard.setData(ClipboardData(text: requestUrl))
-                .then((value) => FlutterToastr.show(localizations.copied, rootNavigator: true, context));
-          }),
-      MenuItem(
-          label: localizations.copy,
-          type: 'submenu',
-          submenu: Menu(items: [
-            MenuItem(
-                label: localizations.copyCurl,
-                onClick: (_) {
-                  Clipboard.setData(ClipboardData(text: curlRequest(widget.request)))
-                      .then((value) => FlutterToastr.show(localizations.copied, rootNavigator: true, context));
-                }),
-            MenuItem(
-                label: localizations.copyRawRequest,
-                onClick: (_) {
-                  Clipboard.setData(ClipboardData(text: copyRawRequest(widget.request)))
-                      .then((value) => FlutterToastr.show(localizations.copied, rootNavigator: true, context));
-                }),
-            MenuItem(
-                label: localizations.copyRequestResponse,
-                onClick: (_) {
-                  Clipboard.setData(ClipboardData(text: copyRequest(widget.request, widget.response.get())))
-                      .then((value) => FlutterToastr.show(localizations.copied, rootNavigator: true, context));
-                }),
-            MenuItem(
-              label: localizations.copyAsPythonRequests,
-              onClick: (_) {
-                Clipboard.setData(ClipboardData(text: copyAsPythonRequests(widget.request)))
-                    .then((value) => FlutterToastr.show(localizations.copied, rootNavigator: true, context));
-              },
-            ),
-          ])),
-      MenuItem.separator(),
-      MenuItem(
-          label: localizations.openNewWindow,
-          onClick: (_) {
-            openDetailInNewWindow();
-          }),
-      MenuItem.separator(),
-      MenuItem(
-          label: localizations.export,
-          type: 'submenu',
-          submenu: Menu(items: [
-            MenuItem(label: localizations.request, onClick: (_) => exportRequest(widget.request)),
-            MenuItem(label: localizations.requestBody, onClick: (_) => exportRequestBody(widget.request)),
-            MenuItem.separator(),
-            MenuItem(label: localizations.response, onClick: (_) => exportResponse(widget.response.get())),
-            MenuItem(label: localizations.responseBody, onClick: (_) => exportResponseBody(widget.response.get())),
-            MenuItem.separator(),
-            MenuItem(label: "HAR", onClick: (_) => exportHar(widget.request)),
-          ])),
-      MenuItem.separator(),
-      MenuItem(label: localizations.repeat, onClick: (_) => onRepeat(widget.request)),
-      MenuItem(label: localizations.customRepeat, onClick: (_) => showCustomRepeat(widget.request)),
-      MenuItem(
-          label: localizations.editRequest,
-          onClick: (_) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              requestEdit();
-            });
-          }),
-      MenuItem.separator(),
-      MenuItem(label: localizations.requestRewrite, onClick: (_) => showRequestRewriteDialog(context, widget.request)),
-      MenuItem(
-          label: localizations.requestMap,
-          onClick: (_) async {
-            showDialog(
-                context: context,
-                builder: (context) =>
-                    RequestMapEdit(url: widget.request.domainPath, title: widget.request.hostAndPort?.host));
-          }),
-      MenuItem(
-          label: localizations.script,
-          onClick: (_) async {
-            var scriptManager = await ScriptManager.instance;
-            var url = widget.request.domainPath;
-            var scriptItem = (scriptManager).list.firstWhereOrNull((it) => it.urls.contains(url));
+  List<ContextMenuItem> _batchMenu() {
+    return [
+      _menuAction(localizations.repeat, _RequestMenuAction.batchRepeat),
+      _menuAction(localizations.export, _RequestMenuAction.batchExport),
+      ContextMenuItem.separator(),
+      _menuAction(localizations.delete, _RequestMenuAction.batchDelete),
+      ContextMenuItem.separator(),
+      _menuAction(localizations.cancel, _RequestMenuAction.batchCancel),
+    ];
+  }
 
-            String? script = scriptItem == null ? null : await scriptManager.getScript(scriptItem);
-            if (!mounted) return;
-            showDialog(
-                context: context,
-                builder: (context) => ScriptEdit(
-                    scriptItem: scriptItem, script: script, url: url, title: widget.request.hostAndPort?.host));
-          }),
-      MenuItem.separator(),
-      MenuItem(
-          label: localizations.favorite,
-          onClick: (_) {
-            FavoriteStorage.addFavorite(widget.request);
-            FlutterToastr.show(localizations.operationSuccess, context, rootNavigator: true);
-          }),
-      MenuItem(
-          label: localizations.highlight,
-          type: 'submenu',
-          submenu: highlightMenu(),
-          onClick: (_) {
+  List<ContextMenuItem> _requestMenu() {
+    return [
+      _menuAction(localizations.copyCurl, _RequestMenuAction.copyCurl),
+      ContextMenuItem.submenu(label: localizations.copy, submenu: _copySubmenu()),
+      ContextMenuItem.separator(),
+      _menuAction(localizations.openNewWindow, _RequestMenuAction.openNewWindow),
+      ContextMenuItem.separator(),
+      ContextMenuItem.submenu(label: localizations.export, submenu: _exportSubmenu()),
+      ContextMenuItem.separator(),
+      _menuAction(localizations.repeat, _RequestMenuAction.repeat),
+      _menuAction(localizations.customRepeat, _RequestMenuAction.customRepeat),
+      _menuAction(localizations.editRequest, _RequestMenuAction.editRequest),
+      ContextMenuItem.separator(),
+      _menuAction(localizations.requestRewrite, _RequestMenuAction.requestRewrite),
+      _menuAction(localizations.requestMap, _RequestMenuAction.requestMap),
+      _menuAction(localizations.script, _RequestMenuAction.script),
+      ContextMenuItem.separator(),
+      _menuAction(localizations.favorite, _RequestMenuAction.favorite),
+      ContextMenuItem.submenu(label: localizations.highlight, submenu: highlightMenu()),
+      ContextMenuItem.separator(),
+      _menuAction(localizations.select, _RequestMenuAction.select),
+      ContextMenuItem.separator(),
+      _menuAction(localizations.delete, _RequestMenuAction.delete),
+    ];
+  }
+
+  List<ContextMenuItem> _copySubmenu() {
+    return [
+      _copyMenuAction(localizations.copyUrl, _RequestCopyMenuAction.copyUrl),
+      _copyMenuAction(localizations.copyRawRequest, _RequestCopyMenuAction.rawRequest),
+      _copyMenuAction(localizations.copyRequestResponse, _RequestCopyMenuAction.requestResponse),
+      _copyMenuAction(localizations.copyAsPythonRequests, _RequestCopyMenuAction.pythonRequests),
+      _copyMenuAction(localizations.copyAsFetch, _RequestCopyMenuAction.fetch),
+    ];
+  }
+
+  List<ContextMenuItem> _exportSubmenu() {
+    return [
+      _exportMenuAction(localizations.request, _RequestExportMenuAction.request),
+      _exportMenuAction(localizations.requestBody, _RequestExportMenuAction.requestBody),
+      ContextMenuItem.separator(),
+      _exportMenuAction(localizations.response, _RequestExportMenuAction.response),
+      _exportMenuAction(localizations.responseBody, _RequestExportMenuAction.responseBody),
+      ContextMenuItem.separator(),
+      _exportMenuAction('HAR', _RequestExportMenuAction.har),
+    ];
+  }
+
+  ContextMenuItem _menuAction(String label, _RequestMenuAction action) {
+    return ContextMenuItem.normal(label: label, onClick: () => _onMenuAction(action));
+  }
+
+  ContextMenuItem _copyMenuAction(String label, _RequestCopyMenuAction action) {
+    return ContextMenuItem.normal(label: label, onClick: () => _onCopyMenuAction(action));
+  }
+
+  ContextMenuItem _exportMenuAction(String label, _RequestExportMenuAction action) {
+    return ContextMenuItem.normal(label: label, onClick: () => _onExportMenuAction(action));
+  }
+
+  Future<void> _onMenuAction(_RequestMenuAction action) async {
+    switch (action) {
+      case _RequestMenuAction.copyCurl:
+        await _copyText(curlRequest(widget.request));
+        break;
+      case _RequestMenuAction.openNewWindow:
+        openDetailInNewWindow();
+        break;
+      case _RequestMenuAction.repeat:
+        onRepeat(widget.request);
+        break;
+      case _RequestMenuAction.customRepeat:
+        await showCustomRepeat(widget.request);
+        break;
+      case _RequestMenuAction.editRequest:
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          requestEdit();
+        });
+        break;
+      case _RequestMenuAction.requestRewrite:
+        showRequestRewriteDialog(context, widget.request);
+        break;
+      case _RequestMenuAction.requestMap:
+        showDialog(
+            context: context,
+            builder: (context) =>
+                RequestMapEdit(url: widget.request.domainPath, title: widget.request.hostAndPort?.host));
+        break;
+      case _RequestMenuAction.script:
+        await _openScriptDialog();
+        break;
+      case _RequestMenuAction.favorite:
+        FavoriteStorage.addFavorite(widget.request);
+        FlutterToastr.show(localizations.operationSuccess, context, rootNavigator: true);
+        break;
+      case _RequestMenuAction.select:
+        widget.multiSelectController.selectOnly(widget.request.requestId);
+        break;
+      case _RequestMenuAction.delete:
+        widget.remove?.call(widget);
+        break;
+      case _RequestMenuAction.batchRepeat:
+        widget.selectionHandlers.onRepeatSelected?.call();
+        break;
+      case _RequestMenuAction.batchExport:
+        widget.selectionHandlers.onExportSelected?.call();
+        break;
+      case _RequestMenuAction.batchDelete:
+        widget.selectionHandlers.onDeleteSelected?.call();
+        break;
+      case _RequestMenuAction.batchCancel:
+        widget.multiSelectController.clear();
+        break;
+    }
+  }
+
+  Future<void> _onCopyMenuAction(_RequestCopyMenuAction action) async {
+    switch (action) {
+      case _RequestCopyMenuAction.copyUrl:
+        await _copyText(widget.request.requestUrl);
+        break;
+      case _RequestCopyMenuAction.rawRequest:
+        await _copyText(copyRawRequest(widget.request));
+        break;
+      case _RequestCopyMenuAction.requestResponse:
+        await _copyText(copyRequest(widget.request, widget.response.get()));
+        break;
+      case _RequestCopyMenuAction.pythonRequests:
+        await _copyText(copyAsPythonRequests(widget.request));
+        break;
+      case _RequestCopyMenuAction.fetch:
+        await _copyText(copyAsFetch(widget.request));
+        break;
+    }
+  }
+
+  void _onExportMenuAction(_RequestExportMenuAction action) {
+    switch (action) {
+      case _RequestExportMenuAction.request:
+        exportRequest(widget.request);
+        break;
+      case _RequestExportMenuAction.requestBody:
+        exportRequestBody(widget.request);
+        break;
+      case _RequestExportMenuAction.response:
+        exportResponse(widget.response.get() ?? widget.request.response);
+        break;
+      case _RequestExportMenuAction.responseBody:
+        exportResponseBody(widget.response.get() ?? widget.request.response);
+        break;
+      case _RequestExportMenuAction.har:
+        exportHar(widget.request);
+        break;
+    }
+  }
+
+  Future<void> _openScriptDialog() async {
+    var scriptManager = await ScriptManager.instance;
+    var url = widget.request.domainPath;
+    var scriptItem = scriptManager.list.firstWhereOrNull((it) => it.urls.contains(url));
+    String? script = scriptItem == null ? null : await scriptManager.getScript(scriptItem);
+    if (!mounted) {
+      return;
+    }
+    showDialog(
+        context: context,
+        builder: (context) =>
+            ScriptEdit(scriptItem: scriptItem, script: script, url: url, title: widget.request.hostAndPort?.host));
+  }
+
+  Future<void> _copyText(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      FlutterToastr.show(localizations.copied, rootNavigator: true, context);
+    }
+  }
+
+  ///高亮
+  List<ContextMenuItem> highlightMenu() {
+    return [
+      ContextMenuItem.normal(
+          label: localizations.red,
+          onClick: () {
             setState(() {
               highlightColor = Colors.red;
             });
           }),
-      MenuItem.separator(),
-      MenuItem(
-          label: localizations.delete,
-          onClick: (_) {
-            widget.remove?.call(widget);
+      ContextMenuItem.normal(
+          label: localizations.yellow,
+          onClick: () {
+            setState(() {
+              highlightColor = Colors.yellow.shade600;
+            });
           }),
-    ]);
-
-    popUpContextMenu(menu);
-  }
-
-  ///高亮
-  Menu highlightMenu() {
-    return Menu(
-      items: [
-        MenuItem(
-            label: localizations.red,
-            onClick: (_) {
-              setState(() {
-                highlightColor = Colors.red;
-              });
-            }),
-        MenuItem(
-            label: localizations.yellow,
-            onClick: (_) {
-              setState(() {
-                highlightColor = Colors.yellow.shade600;
-              });
-            }),
-        MenuItem(
-            label: localizations.blue,
-            onClick: (_) {
-              setState(() {
-                highlightColor = Colors.blue;
-              });
-            }),
-        MenuItem(
-            label: localizations.green,
-            onClick: (_) {
-              setState(() {
-                highlightColor = Colors.green;
-              });
-            }),
-        MenuItem(
-            label: localizations.gray,
-            onClick: (_) {
-              setState(() {
-                highlightColor = Colors.grey;
-              });
-            }),
-        MenuItem.separator(),
-        MenuItem.checkbox(
-            label: localizations.autoRead,
-            checked: AppConfiguration.current?.autoReadEnabled,
-            onClick: (_) {
-              setState(() {
-                AppConfiguration.current?.autoReadEnabled = !AppConfiguration.current!.autoReadEnabled;
-              });
-            }),
-        MenuItem.separator(),
-        MenuItem(
-            label: localizations.reset,
-            onClick: (_) {
-              setState(() {
-                highlightColor = null;
-                autoReadRequests.clear();
-              });
-            }),
-        MenuItem(
-            label: localizations.keyword,
-            onClick: (_) {
-              showDialog(context: context, builder: (BuildContext context) => const DesktopKeywordHighlight());
-            }),
-      ],
-    );
+      ContextMenuItem.normal(
+          label: localizations.blue,
+          onClick: () {
+            setState(() {
+              highlightColor = Colors.blue;
+            });
+          }),
+      ContextMenuItem.normal(
+          label: localizations.green,
+          onClick: () {
+            setState(() {
+              highlightColor = Colors.green;
+            });
+          }),
+      ContextMenuItem.normal(
+          label: localizations.gray,
+          onClick: () {
+            setState(() {
+              highlightColor = Colors.grey;
+            });
+          }),
+      ContextMenuItem.separator(),
+      ContextMenuItem.checkbox(
+          label: localizations.autoRead,
+          checked: AppConfiguration.current?.autoReadEnabled ?? false,
+          onClick: () {
+            setState(() {
+              AppConfiguration.current?.autoReadEnabled = !AppConfiguration.current!.autoReadEnabled;
+            });
+          }),
+      ContextMenuItem.separator(),
+      ContextMenuItem.normal(
+          label: localizations.reset,
+          onClick: () {
+            setState(() {
+              highlightColor = null;
+              autoReadRequests.clear();
+            });
+          }),
+      ContextMenuItem.normal(
+          label: localizations.keyword,
+          onClick: () {
+            showDialog(context: context, builder: (BuildContext context) => const DesktopKeywordHighlight());
+          }),
+    ];
   }
 
   //显示高级重发
@@ -354,8 +512,7 @@ class _RequestWidgetState extends State<RequestWidget> {
     var request = httpRequest.copy(uri: httpRequest.requestUrl);
     var proxyInfo = widget.proxyServer.isRunning ? ProxyInfo.of("127.0.0.1", widget.proxyServer.port) : null;
     HttpClients.proxyRequest(request, proxyInfo: proxyInfo);
-
-    CustomToast.success(localizations.reSendRequest).show(context);
+    FlutterToastr.show(localizations.reSendRequest, context, rootNavigator: true);
   }
 
   PopupMenuItem popupItem(String text, {VoidCallback? onTap}) {
@@ -376,7 +533,7 @@ class _RequestWidgetState extends State<RequestWidget> {
 
     window.setTitle(localizations.requestEdit);
     window
-      ..setFrame(const Offset(100, 100) & Size(960 * ratio, size.height * ratio))
+      ..setSize(Size(960 * ratio, size.height * ratio))
       ..center()
       ..show();
   }
@@ -396,24 +553,65 @@ class _RequestWidgetState extends State<RequestWidget> {
 
   //点击事件
   void onClick() {
-    if (!selected) {
-      setState(() {
-        selected = true;
-      });
+    final keyboard = HardwareKeyboard.instance;
+    final useToggleSelection = keyboard.isMetaPressed || keyboard.isControlPressed;
+    final useRangeSelection = keyboard.isShiftPressed;
+
+    if (useRangeSelection) {
+      widget.selectionHandlers.onRangeSelection?.call(widget.request);
+      return;
     }
+
+    if (selectionMode || useToggleSelection) {
+      setState(() {
+        widget.multiSelectController.toggle(widget.request.requestId);
+      });
+      return;
+    }
+
+    //切换选中的节点（按请求ID记录，列表项重建后仍能保持选中）
+    selectedRequestId.value = widget.request.requestId;
 
     if (AppConfiguration.current?.autoReadEnabled == true) {
-      autoReadRequests.add(widget.request.requestId);
+      markAutoRead(widget.request.requestId);
     }
 
-    //切换选中的节点
-    if (selectedState?.mounted == true && selectedState != this) {
-      selectedState?.setState(() {
-        selectedState?.selected = false;
-      });
-    }
-
-    selectedState = this;
     NetworkTabController.current?.change(widget.request, widget.response.get() ?? widget.request.response);
   }
 }
+
+class RequestSelectionHandlers {
+  final Function(HttpRequest request)? onRangeSelection;
+  final VoidCallback? onDeleteSelected;
+  final VoidCallback? onRepeatSelected;
+  final VoidCallback? onExportSelected;
+
+  const RequestSelectionHandlers({
+    this.onRangeSelection,
+    this.onDeleteSelected,
+    this.onRepeatSelected,
+    this.onExportSelected,
+  });
+}
+
+enum _RequestMenuAction {
+  copyCurl,
+  openNewWindow,
+  repeat,
+  customRepeat,
+  editRequest,
+  requestRewrite,
+  requestMap,
+  script,
+  favorite,
+  select,
+  delete,
+  batchRepeat,
+  batchExport,
+  batchDelete,
+  batchCancel,
+}
+
+enum _RequestCopyMenuAction { copyUrl, rawRequest, requestResponse, pythonRequests, fetch }
+
+enum _RequestExportMenuAction { request, requestBody, response, responseBody, har }

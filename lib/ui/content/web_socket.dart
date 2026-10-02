@@ -52,7 +52,7 @@ class Websocket extends StatelessWidget {
         var previewButton = IconButton(
           tooltip: "Preview",
           onPressed: () {
-            showDialog(context: context, builder: (context) => _PreviewDialog(bytes: message.payloadData));
+            showDialog(context: context, builder: (context) => PacketPreviewDialog(bytes: message.payloadData));
           },
           icon: Icon(Icons.expand_more, color: ColorScheme.of(context).primary),
         );
@@ -78,21 +78,22 @@ class Websocket extends StatelessWidget {
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
                                   color: message.isFromClient
-                                      ? Colors.green.withOpacity(0.26)
-                                      : Colors.blue.withOpacity(0.3),
+                                      ? Colors.green.withValues(alpha: 0.26)
+                                      : Colors.blue.withValues(alpha: 0.3),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: SelectableText(
                                   "${message.payloadDataAsString}${message.isBinary ? ' ${getPackage(message.payloadLength)}' : ''}",
                                   maxLines: 3,
+                                  minLines: 1,
                                   contextMenuBuilder: (context, editableTextState) =>
                                       contextMenu(context, editableTextState,
                                           customItem: ContextMenuButtonItem(
                                             label: localizations.download,
                                             onPressed: () async {
-                                              String? path = (await FilePicker.platform
-                                                  .saveFile(fileName: "websocket.txt", bytes: message.payloadData));
-                                              if (path != null && context.mounted) {
+                                              final saved = await FilePicker.saveFile(
+                                                  fileName: "websocket.txt", bytes: message.payloadData);
+                                              if (saved != null && context.mounted) {
                                                 CustomToast.success(localizations.saveSuccess).show(context);
                                               }
                                             },
@@ -113,16 +114,16 @@ class Websocket extends StatelessWidget {
   }
 }
 
-class _PreviewDialog extends StatefulWidget {
+class PacketPreviewDialog extends StatefulWidget {
   final List<int> bytes;
 
-  const _PreviewDialog({required this.bytes});
+  const PacketPreviewDialog({super.key, required this.bytes});
 
   @override
-  State<_PreviewDialog> createState() => _PreviewDialogState();
+  State<PacketPreviewDialog> createState() => _PacketPreviewDialogState();
 }
 
-class _PreviewDialogState extends State<_PreviewDialog> {
+class _PacketPreviewDialogState extends State<PacketPreviewDialog> {
   int tabIndex = 0; // 0: HEX, 1: TEXT
 
   @override

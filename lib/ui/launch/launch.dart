@@ -24,7 +24,9 @@ import 'package:proxypin/native/vpn.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/ui/desktop/ssl/pc_cert.dart';
+import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/utils/lang.dart';
+import 'package:proxypin/utils/desktop_tray.dart';
 import 'package:proxypin/utils/platform.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -67,6 +69,7 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
     if (Platforms.isDesktop()) {
       windowManager.addListener(this);
       windowManager.setPreventClose(true);
+      DesktopTrayManager.instance.setQuitHandler(appExit);
     }
 
     WidgetsBinding.instance.addObserver(this);
@@ -89,13 +92,69 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
   void dispose() {
     windowManager.removeListener(this);
     WidgetsBinding.instance.removeObserver(this);
+    if (Platforms.isDesktop()) {
+      DesktopTrayManager.instance.setQuitHandler(null);
+    }
     super.dispose();
   }
 
   @override
   void onWindowClose() async {
     logger.d("onWindowClose");
+    await _handleWindowClose();
+  }
+
+  Future<void> _handleWindowClose() async {
+    final appConfiguration = AppConfiguration.current;
+    if (Platforms.isDesktop() && appConfiguration?.minimizeToTray == null || appConfiguration?.minimizeToTray == true) {
+      if (appConfiguration?.minimizeToTray == null) {
+        final minimize = await _showTrayClosePrompt();
+        if (!mounted) {
+          return;
+        }
+
+        appConfiguration?.minimizeToTray = minimize;
+        await appConfiguration?.flushConfig();
+
+        if (!minimize) {
+          await appExit();
+          return;
+        }
+      }
+
+      try {
+        await DesktopTrayManager.instance.showToTray();
+        return;
+      } catch (e) {
+        logger.e('show to tray failed, fallback to exit', error: e);
+      }
+    }
+
     await appExit();
+  }
+
+  Future<bool> _showTrayClosePrompt() async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) {
+            return AlertDialog(
+              title: Text(localizations.minimizeToTrayTitle),
+              content: SizedBox(width: 320, child: Text(maxLines: 3, localizations.trayClosePromptContent)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text(localizations.trayCloseExitAnyway),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: Text(localizations.trayCloseMinimizeToTray),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
   }
 
   Future<void> appExit() async {
@@ -103,6 +162,7 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
     await widget.proxyServer.stop();
     started = false;
     if (Platforms.isDesktop()) {
+      await DesktopTrayManager.instance.exitApp();
       windowManager.setPreventClose(false);
       await windowManager.destroy();
     }
@@ -120,15 +180,20 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
 
   @override
   Future<AppExitResponse> didRequestAppExit() async {
-    await appExit();
+    bool isPreventClose = await windowManager.isPreventClose();
+    if (!isPreventClose || Platform.isMacOS) {
+      await appExit();
+    }
     return super.didRequestAppExit();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      if (widget.proxyServer.isRunning) {
-        widget.proxyServer.retryBind();
+      if (widget.proxyServer.isRunning && started) {
+        widget.proxyServer.retryBind().catchError((e) {
+          logger.e('retryBind failed on resumed', error: e);
+        });
       }
 
       if (Platforms.isMobile() && started == false) {
@@ -166,9 +231,19 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
 
             widget.proxyServer.stop().then((value) {
               widget.onStop?.call();
-              setState(() {
-                started = !started;
-              });
+              if (mounted) {
+                setState(() {
+                  started = !started;
+                });
+              }
+            }).catchError((e) {
+              logger.e("stop proxy server failed", error: e);
+              if (mounted) {
+                FlutterToastr.show(localizations.fail, context, duration: 3);
+                setState(() {
+                  started = false;
+                });
+              }
             });
           } else {
             start();
@@ -188,11 +263,14 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
       }
 
       widget.proxyServer.start().then((value) {
-        setState(() {
-          started = true;
-        });
+        if (mounted) {
+          setState(() {
+            started = true;
+          });
+        }
         widget.onStart?.call();
       }).catchError((e) {
+        logger.e("启动代理服务器失败", error: e);
         String message = localizations.proxyPortRepeat(widget.proxyServer.port);
         FlutterToastr.show(message, context, duration: 3);
       });

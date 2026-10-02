@@ -63,7 +63,7 @@ class ThemeModel {
 }
 
 class AppConfiguration {
-  static const String version = "1.2.2";
+  static const String version = "1.3.2";
 
   ValueNotifier<bool> globalChange = ValueNotifier(false);
 
@@ -71,7 +71,7 @@ class AppConfiguration {
   Locale? _language;
 
   //是否显示更新内容公告
-  bool upgradeNoticeV22 = true;
+  bool upgradeNoticeV32 = true;
 
   /// 是否启用画中画
   ValueNotifier<bool> pipEnabled = ValueNotifier(Platform.isAndroid);
@@ -79,8 +79,8 @@ class AppConfiguration {
   /// 显示画中画图标
   ValueNotifier<bool> pipIcon = ValueNotifier(Platform.isAndroid);
 
-  /// header默认展示
-  bool headerExpanded = true;
+  /// Headers展示模式: table(逐行) / text(原始文本)
+  String headerViewMode = "table";
 
   /// 底部导航栏
   bool bottomNavigation = true;
@@ -91,6 +91,9 @@ class AppConfiguration {
   ///自动已读
   bool autoReadEnabled = true;
 
+  /// 清空抓包前确认
+  bool clearConfirm = false;
+
   //桌面window大小
   Size? windowSize;
 
@@ -99,6 +102,22 @@ class AppConfiguration {
 
   //左侧面板占比
   double panelRatio = 0.3;
+
+  /// 关闭窗口时最小化到系统托盘
+  bool? minimizeToTray;
+
+  /// 是否启用 MCP 服务
+  bool mcpEnabled = false;
+
+  /// 导出给 AI 时是否脱敏 Authorization/Cookie
+  bool mcpRedactEnabled = true;
+
+  /// 移动端 LAN 模式的访问 token（桌面 loopback 不用，留空即可）
+  String? mcpToken;
+
+  /// MCP 服务监听端口。为 null/非法时使用默认端口 9127，
+  /// 被占用时由服务回退到系统随机端口。
+  int? mcpPort;
 
   AppConfiguration._();
 
@@ -196,19 +215,17 @@ class AppConfiguration {
       _theme = ThemeModel(mode: mode, useMaterial3: config['useMaterial3'] ?? true);
       _theme.color = config['themeColor'] ?? "Blue";
 
-      upgradeNoticeV22 = config['upgradeNoticeV22'] ?? true;
-      _language = config['language'] == null 
-        ? null 
-        : Locale.fromSubtags(
-            languageCode: config['language'], 
-            scriptCode: config['languageScript']
-          );
+      upgradeNoticeV32 = config['upgradeNoticeV32'] ?? true;
+      _language = config['language'] == null
+          ? null
+          : Locale.fromSubtags(languageCode: config['language'], scriptCode: config['languageScript']);
       pipEnabled.value = config['pipEnabled'] ?? true;
       pipIcon.value = config['pipIcon'] ?? false;
-      headerExpanded = config['headerExpanded'] ?? true;
+      headerViewMode = config['headerViewMode'] ?? "table";
       bottomNavigation = config['bottomNavigation'] ?? true;
       memoryCleanupThreshold = config['memoryCleanupThreshold'];
       autoReadEnabled = config['autoReadEnabled'] ?? true;
+      clearConfirm = config['clearConfirm'] ?? false;
 
       windowSize =
           config['windowSize'] == null ? null : Size(config['windowSize']['width'], config['windowSize']['height']);
@@ -218,6 +235,13 @@ class AppConfiguration {
       if (config['panelRatio'] != null) {
         panelRatio = config['panelRatio'];
       }
+      minimizeToTray = config['minimizeToTray'];
+
+      mcpEnabled = config['mcpEnabled'] ?? false;
+      mcpRedactEnabled = config['mcpRedactEnabled'] ?? true;
+      mcpToken = config['mcpToken'] as String?;
+      var port = config['mcpPort'];
+      mcpPort = port is int && port > 0 && port <= 65535 ? port : null;
     } catch (e) {
       logger.e(e);
     }
@@ -227,7 +251,7 @@ class AppConfiguration {
   bool _isWriting = false;
 
   /// 刷新配置文件
-  flushConfig() async {
+  Future<void> flushConfig() async {
     if (_isWriting) return;
     _isWriting = true;
 
@@ -247,11 +271,12 @@ class AppConfiguration {
       'mode': _theme.mode.name,
       'themeColor': _theme.color,
       'useMaterial3': _theme.useMaterial3,
-      'upgradeNoticeV22': upgradeNoticeV22,
+      'upgradeNoticeV32': upgradeNoticeV32,
       "language": _language?.languageCode,
       "languageScript": _language?.scriptCode,
-      "headerExpanded": headerExpanded,
+      "headerViewMode": headerViewMode,
       "autoReadEnabled": autoReadEnabled,
+      "clearConfirm": clearConfirm,
       if (memoryCleanupThreshold != null) 'memoryCleanupThreshold': memoryCleanupThreshold,
       if (Platforms.isMobile()) 'pipEnabled': pipEnabled.value,
       if (Platforms.isMobile()) 'pipIcon': pipIcon.value ? true : null,
@@ -261,6 +286,12 @@ class AppConfiguration {
       if (Platforms.isDesktop())
         "windowPosition": windowPosition == null ? null : {"dx": windowPosition?.dx, "dy": windowPosition?.dy},
       if (Platforms.isDesktop()) 'panelRatio': panelRatio,
+      if (Platforms.isDesktop()) 'minimizeToTray': minimizeToTray,
+      // MCP 配置所有平台都写入
+      'mcpEnabled': mcpEnabled,
+      'mcpRedactEnabled': mcpRedactEnabled,
+      if (mcpToken != null) 'mcpToken': mcpToken,
+      if (mcpPort != null) 'mcpPort': mcpPort,
     };
   }
 }

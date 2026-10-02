@@ -16,6 +16,7 @@
 
 import 'dart:collection';
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:date_format/date_format.dart';
 import 'package:flutter/material.dart';
@@ -40,6 +41,7 @@ import 'package:proxypin/ui/mobile/setting/script.dart';
 import 'package:proxypin/utils/curl.dart';
 import 'package:proxypin/utils/lang.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
 
 /// 收藏列表页面
 /// @author WangHongEn
@@ -57,10 +59,58 @@ class MobileFavorites extends StatefulWidget {
 class _FavoritesState extends State<MobileFavorites> {
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
+  Future<void> _exportJson() async {
+    final favorites = await FavoriteStorage.favorites;
+    final json = FavoriteStorage.toJson(favorites);
+    final bytes = utf8.encode(json);
+    final path = await FilePicker.saveFile(fileName: 'favorites.json', bytes: bytes);
+    if (path == null) return;
+    if (mounted) FlutterToastr.show(localizations.exportSuccess, context);
+  }
+
+  Future<String?> _materializePickedFile(PlatformFile file) async {
+    if (file.path != null) return file.path!;
+    final bytes = await file.readAsBytes();
+    final tmp = await File('${Directory.systemTemp.path}/${file.name}').create();
+    await tmp.writeAsBytes(bytes, flush: true);
+    return tmp.path;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text(localizations.favorites, style: const TextStyle(fontSize: 16)), centerTitle: true),
+        appBar: AppBar(
+            title: Text(localizations.favorites, style: const TextStyle(fontSize: 16)),
+            centerTitle: true,
+            actions: [
+              IconButton(
+                  tooltip: localizations.export,
+                  icon: const Icon(Icons.upload_file, size: 20),
+                  onPressed: () async {
+                    try {
+                      await _exportJson();
+                    } catch (e) {
+                      if (context.mounted) FlutterToastr.show('${localizations.importFailed}: $e', context);
+                    }
+                  }),
+              IconButton(
+                  tooltip: localizations.import,
+                  icon: const Icon(Icons.download_for_offline_outlined, size: 20),
+                  onPressed: () async {
+                    final file = await FilePicker.pickFile(
+                        type: FileType.custom, allowedExtensions: ['json', 'har']);
+                    if (file == null) return;
+                    final path = await _materializePickedFile(file);
+                    if (path == null) return;
+                    try {
+                      await FavoriteStorage.importFromFile(path);
+                      if (context.mounted) FlutterToastr.show(localizations.importSuccess, context);
+                      setState(() {});
+                    } catch (e) {
+                      if (context.mounted) FlutterToastr.show('${localizations.importFailed}: $e', context);
+                    }
+                  }),
+            ]),
         body: FutureBuilder(
             future: FavoriteStorage.favorites,
             builder: (BuildContext context, AsyncSnapshot<Queue<Favorite>> snapshot) {
@@ -143,7 +193,8 @@ class _FavoriteItemState extends State<_FavoriteItem> {
               if (request.requestUri?.query.isNotEmpty == true)
                 TextSpan(
                     text: '?${request.requestUri?.query}',
-                    style: TextStyle(fontSize: 14, color: Colors.pinkAccent.shade200))
+                    style: TextStyle(fontSize: 14, color: Colors.pinkAccent.shade200)),
+              if (request.graphqlOperationName != null) graphqlOperationSpan(request, fontSize: 14)!,
             ]));
 
     var time = formatDate(request.requestTime, [mm, '-', d, ' ', HH, ':', nn, ':', ss]);
@@ -157,6 +208,16 @@ class _FavoriteItemState extends State<_FavoriteItem> {
             minLeadingWidth: 25,
             leading: getIcon(response),
             title: title,
+            trailing: request.isWebSocket
+                ? Text(
+                    'WS',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  )
+                : null,
             subtitle: Text.rich(
                 maxLines: 1,
                 TextSpan(children: [
@@ -168,7 +229,7 @@ class _FavoriteItemState extends State<_FavoriteItem> {
   }
 
   ///右键菜单
-  menu(details) {
+  void menu(details) {
     // setState(() {
     //   selected = true;
     // });
@@ -192,7 +253,7 @@ class _FavoriteItemState extends State<_FavoriteItem> {
                 alignment: Alignment.centerLeft,
                 child: Padding(
                     padding: EdgeInsets.only(left: 20, top: 5),
-                    child: Text(localizations.selectAction, style: Theme.of(context).textTheme.bodyLarge)),
+                    child: Text(localizations.select, style: Theme.of(context).textTheme.bodyLarge)),
               ),
               //copy
               menuItem(
@@ -309,14 +370,14 @@ class _FavoriteItemState extends State<_FavoriteItem> {
   }
 
   //显示高级重发
-  showCustomRepeat(HttpRequest request) {
+  void showCustomRepeat(HttpRequest request) {
     Navigator.of(context).pop();
     Navigator.of(context).push(MaterialPageRoute(
         builder: (context) => futureWidget(SharedPreferences.getInstance(),
             (prefs) => MobileCustomRepeat(onRepeat: () => onRepeat(request), prefs: prefs))));
   }
 
-  onRepeat(HttpRequest request) {
+  void onRepeat(HttpRequest request) {
     var httpRequest = request.copy(uri: request.requestUrl);
     var proxyInfo = widget.proxyServer.isRunning ? ProxyInfo.of("127.0.0.1", widget.proxyServer.port) : null;
     HttpClients.proxyRequest(httpRequest, proxyInfo: proxyInfo);
@@ -327,7 +388,7 @@ class _FavoriteItemState extends State<_FavoriteItem> {
   }
 
   //重命名
-  rename(Favorite item) {
+  void rename(Favorite item) {
     String? name = item.name;
     showDialog(
         context: context,
@@ -373,7 +434,7 @@ class _FavoriteItemState extends State<_FavoriteItem> {
     return TextButton.icon(
         onPressed: onPressed,
         label: Text(label, style: style),
-        icon: Icon(icon, size: iconSize, color: theme.colorScheme.primary.withOpacity(0.65)));
+        icon: Icon(icon, size: iconSize, color: theme.colorScheme.primary.withValues(alpha: 0.65)));
   }
 
   Widget menuItem({required Widget left, required Widget right}) {

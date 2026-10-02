@@ -35,6 +35,7 @@ import 'package:share_plus/share_plus.dart';
 class HistoryStorage {
   static HistoryStorage? _instance;
   final File _storageFile;
+  static final StreamController<HistoryItem> _remoteImportedController = StreamController<HistoryItem>.broadcast();
 
   HistoryStorage._internal(this._storageFile);
 
@@ -78,8 +79,16 @@ class HistoryStorage {
     return _histories.source;
   }
 
-  addListener(ListenerListEvent<HistoryItem> listener) {
+  static Stream<HistoryItem> get onRemoteImported => _remoteImportedController.stream;
+
+  static const String remoteHistoryPrefix = '[Remote] ';
+
+  void addListener(ListenerListEvent<HistoryItem> listener) {
     _histories.addListener(listener);
+  }
+
+  void removeListener(ListenerListEvent<HistoryItem> listener) {
+    _histories.removeListener(listener);
   }
 
   ///打开文件
@@ -90,8 +99,8 @@ class HistoryStorage {
   }
 
   /// 添加历史记录
-  HistoryItem addHistory(String name, File file, int requestLength) {
-    var historyItem = HistoryItem(name, file.path, requestLength, 0);
+  Future<HistoryItem> addHistory(String name, File file, int requestLength) async {
+    var historyItem = HistoryItem(name, file.path, requestLength, await file.length());
     _histories.add(historyItem);
     refresh();
     return historyItem;
@@ -128,16 +137,23 @@ class HistoryStorage {
 
   //获取请求列表
   Future<List<HttpRequest>> getRequests(HistoryItem history) async {
-    if (history.requests == null) {
-      final homePath = await _homePath();
-      String path = '$homePath${Platform.pathSeparator}${Files.getName(history.path)}';
-      var file = File(path);
-      history.requests = await Har.readFile(file);
-      history.requestLength = history.requests!.length;
-      file.length().then((size) => history.fileSize = size);
-    }
+    history.requests ??= await readRequests(history);
 
     return history.requests!;
+  }
+
+  /// 从历史文件读取请求列表，不写入 [HistoryItem.requests] 永久缓存。
+  ///
+  /// 供 MCP 等按需分析的调用方使用：返回的列表只由调用方做有界缓存，
+  /// 淘汰后即可被回收，避免大历史会话长期常驻内存。同时刷新数量/大小元数据。
+  Future<List<HttpRequest>> readRequests(HistoryItem history) async {
+    final homePath = await _homePath();
+    String path = '$homePath${Platform.pathSeparator}${Files.getName(history.path)}';
+    var file = File(path);
+    var requests = await Har.readFile(file);
+    history.requestLength = requests.length;
+    file.length().then((size) => history.fileSize = size);
+    return requests;
   }
 
   ///刷新requests
@@ -157,6 +173,36 @@ class HistoryStorage {
     await refresh();
   }
 
+  Future<HistoryItem> addRequests(Iterable<HttpRequest> requests,
+      {String? name, bool notifyRemoteImported = false}) async {
+    final list = requests.toList();
+    final historyFile = await HistoryStorage.openFile("${DateTime.now().millisecondsSinceEpoch}.txt");
+    final open = await historyFile.open(mode: FileMode.append);
+    try {
+      for (var request in list) {
+        await open.writeString(jsonEncode(Har.toHar(request)));
+        await open.writeString(",\n");
+      }
+    } finally {
+      await open.close();
+    }
+
+    var historyName = (name == null || name.trim().isEmpty)
+        ? formatDate(DateTime.now(), [mm, '-', d, ' ', HH, ':', nn, ':', ss])
+        : name;
+    if (notifyRemoteImported) {
+      final hasRemotePrefix = historyName.startsWith(remoteHistoryPrefix) || historyName.startsWith('【远程】');
+      if (!hasRemotePrefix) {
+        historyName = '$remoteHistoryPrefix$historyName';
+      }
+    }
+    final historyItem = await addHistory(historyName, historyFile, list.length);
+    if (notifyRemoteImported) {
+      _remoteImportedController.add(historyItem);
+    }
+    return historyItem;
+  }
+
   //添加历史
   Future<HistoryItem> addHarFile(XFile file) async {
     var readAsBytes = await file.readAsString();
@@ -172,14 +218,7 @@ class HistoryStorage {
     List entries = log['entries'];
     var list = entries.map((e) => Har.toRequest(e)).toList();
 
-    //保存文件
-    var historyFile = await HistoryStorage.openFile("${DateTime.now().millisecondsSinceEpoch}.txt");
-    var open = await historyFile.open(mode: FileMode.append);
-    for (var request in list) {
-      await open.writeString(jsonEncode(Har.toHar(request)));
-      await open.writeString(",\n");
-    }
-    return addHistory(name, historyFile, list.length);
+    return addRequests(list, name: name);
   }
 }
 
@@ -240,7 +279,7 @@ class HistoryTask extends ListenerListEvent<HttpRequest> {
   void onBatchRemove(List<HttpRequest> items) => resetList();
 
   @override
-  clear() => resetList();
+  void clear(List<HttpRequest> items) => resetList();
 
   Future<void> resetList() async {
     locked = true;
@@ -273,7 +312,7 @@ class HistoryTask extends ListenerListEvent<HttpRequest> {
     HistoryStorage storage = await HistoryStorage.instance;
     var name = formatDate(DateTime.now(), [mm, '-', d, ' ', HH, ':', nn, ':', ss]);
     File file = await HistoryStorage.openFile("${DateTime.now().millisecondsSinceEpoch}.txt");
-    history = storage.addHistory(name, file, 0);
+    history = await storage.addHistory(name, file, 0);
     writeList.clear();
     writeList.addAll(sourceList.source);
     locked = false;
@@ -319,6 +358,18 @@ class HistoryItem {
 
   HistoryItem(this.name, this.path, this.requestLength, this.fileSize, {DateTime? createTime})
       : createTime = createTime ?? DateTime.now();
+
+  /// 稳定会话 id：历史文件名里的时间戳（{epochMs}.txt）。
+  ///
+  /// 不随列表增删改变，可作为 MCP history_id；删除中间某条历史后旧 id 也不会
+  /// 错位指向别的会话。极旧/异常命名解析不出时退化为路径 hash（同进程内稳定）。
+  int get stableId {
+    var fileName = Files.getName(path);
+    if (fileName.endsWith('.txt')) {
+      fileName = fileName.substring(0, fileName.length - '.txt'.length);
+    }
+    return int.tryParse(fileName) ?? path.hashCode;
+  }
 
   //json反序列化
   factory HistoryItem.formJson(Map<String, dynamic> map) {

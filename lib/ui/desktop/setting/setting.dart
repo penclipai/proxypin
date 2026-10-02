@@ -18,6 +18,7 @@ import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/components/manager/hosts_manager.dart';
+import 'package:proxypin/network/components/manager/network_condition_manager.dart';
 import 'package:proxypin/network/components/manager/request_block_manager.dart';
 import 'package:proxypin/network/util/system_proxy.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
@@ -27,6 +28,8 @@ import 'package:proxypin/ui/desktop/setting/about.dart';
 import 'package:proxypin/ui/desktop/setting/external_proxy.dart';
 import 'package:proxypin/ui/desktop/setting/hosts.dart';
 import 'package:proxypin/ui/desktop/setting/request_block.dart';
+import 'package:proxypin/ui/desktop/setting/weak_network.dart';
+import 'package:proxypin/ui/desktop/toolbar/mcp_panel.dart';
 
 import 'filter.dart';
 
@@ -75,9 +78,13 @@ class _SettingState extends State<Setting> {
         item(localizations.requestBlock, onPressed: showRequestBlock),
         item(localizations.requestRewrite, onPressed: requestRewrite),
         item(localizations.requestMap, onPressed: requestMap),
+        item(localizations.requestCrypto, onPressed: showRequestCrypto),
         item(localizations.script,
-            onPressed: () => MultiWindow.openWindow(localizations.script, 'ScriptWidget', size: const Size(800, 700))),
+            onPressed: () => MultiWindow.openWindow(localizations.script, 'ScriptWidget', size: const Size(800, 780))),
+        item(localizations.breakpoint, onPressed: requestBreakpoint),
+        item(localizations.weakNetwork, onPressed: showWeakNetwork),
         item(localizations.externalProxy, onPressed: setExternalProxy),
+        item(localizations.mcpService, onPressed: () => McpServiceDialog.show(context, widget.proxyServer)),
         item(localizations.about, onPressed: showAbout),
       ],
     );
@@ -108,8 +115,11 @@ class _SettingState extends State<Setting> {
 
   ///请求重写Dialog
   void requestRewrite() async {
-    if (!mounted) return;
     MultiWindow.openWindow(localizations.requestRewrite, 'RequestRewriteWidget', size: const Size(800, 750));
+  }
+
+  void requestBreakpoint() async {
+    MultiWindow.openWindow(localizations.breakpoint, 'RequestBreakpointPage', size: const Size(800, 750));
   }
 
   ///请求本地映射
@@ -139,6 +149,19 @@ class _SettingState extends State<Setting> {
         barrierDismissible: false,
         context: context,
         builder: (context) => RequestBlock(requestBlockManager: requestBlockManager));
+  }
+
+  void showRequestCrypto() {
+    MultiWindow.openWindow(localizations.requestCrypto, 'RequestCryptoPage', size: const Size(820, 750));
+  }
+
+  void showWeakNetwork() async {
+    var manager = await NetworkConditionManager.instance;
+    if (!mounted) return;
+    showDialog(
+        barrierDismissible: false,
+        context: context,
+        builder: (context) => WeakNetworkDialog(manager: manager));
   }
 }
 
@@ -184,6 +207,7 @@ class _ProxyMenuState extends State<_ProxyMenu> {
 
   @override
   Widget build(BuildContext context) {
+    bool isEn = localizations.localeName.startsWith("en");
     return SubmenuButton(
       menuChildren: [
         PortWidget(proxyServer: widget.proxyServer, textStyle: const TextStyle(fontSize: 13)),
@@ -229,7 +253,7 @@ class _ProxyMenuState extends State<_ProxyMenu> {
                 children: [
                   Text(localizations.proxyIgnoreDomain, style: const TextStyle(fontSize: 14)),
                   const SizedBox(height: 3),
-                  Text("多个使用;分割", style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                  Text(isEn ? "Use ';' to separate multiple entries": "多个使用;分割", style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
                 ],
               ),
               Padding(
@@ -268,7 +292,7 @@ class _ProxyMenuState extends State<_ProxyMenu> {
       Expanded(
           child: Padding(
               padding: const EdgeInsets.only(left: 15, right: 20),
-              child: Text(localizations.systemProxy, style: const TextStyle(fontSize: 14)))),
+              child: Text(localizations.setAs + localizations.systemProxy, style: const TextStyle(fontSize: 14)))),
       Transform.scale(
           scale: 0.75,
           child: Switch(

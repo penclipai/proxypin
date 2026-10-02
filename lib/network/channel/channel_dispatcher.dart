@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:proxypin/native/process_info.dart';
 import 'package:proxypin/network/channel/channel.dart';
 import 'package:proxypin/network/channel/channel_context.dart';
 import 'package:proxypin/network/handle/relay_handle.dart';
+import 'package:proxypin/network/mqtt/mqtt_relay_handler.dart';
 import 'package:proxypin/network/channel/host_port.dart';
 import 'package:proxypin/network/handle/websocket_handle.dart';
 import 'package:proxypin/network/http/codec.dart';
@@ -26,6 +29,11 @@ class ChannelDispatcher extends ChannelHandler<Uint8List> {
 
   //h2 stream dependency Sequential exec
   SequentialTaskQueue taskQueue = SequentialTaskQueue();
+
+  //正在处理中的读事件(HTTP/1.1 不走 taskQueue). 两处 listen(Network.listen / ChannelDispatcher.listen)
+  //都汇聚到本 dispatcher 的 channelRead/channelInactive, 故在此层等待可覆盖所有连接类型.
+  //channelInactive 需等待其完成再关闭对端连接, 避免服务端关闭时提前关闭客户端连接导致 socket hang up.
+  final Set<Completer<void>> _pendingReads = {};
 
   void handle(Decoder decoder, Encoder encoder, ChannelHandler handler) {
     this.encoder = encoder;
@@ -86,6 +94,10 @@ class ChannelDispatcher extends ChannelHandler<Uint8List> {
 
   @override
   Future<void> channelRead(ChannelContext channelContext, Channel channel, Uint8List msg) async {
+    //同步注册: 在首个 await 之前登记, 保证 onDone(channelInactive) 触发时本次读事件已在集合中
+    final pending = Completer<void>();
+    _pendingReads.add(pending);
+
     //手机扫码连接转发远程
     HostAndPort? remote = channelContext.getAttribute(AttributeKeys.remote);
     buffer.add(msg);
@@ -99,7 +111,7 @@ class ChannelDispatcher extends ChannelHandler<Uint8List> {
       Channel? remoteChannel = channelContext.getAttribute(channel.id);
 
       //大body 不解析直接转发
-      if (buffer.length > Codec.maxBodyLength && handler is! RelayHandler && remoteChannel != null) {
+      if (buffer.length > Codec.maxBodyLength && handler is! RelayHandler && handler is! MqttRelayHandler && remoteChannel != null) {
         logger.w("[$channel] forward large body");
         relay(channelContext, channel, remoteChannel);
         return;
@@ -118,6 +130,9 @@ class ChannelDispatcher extends ChannelHandler<Uint8List> {
 
         if (remoteChannel != null) {
           await remoteChannel.writeBytes(decodeResult.forward!);
+        } else if (channelContext.isHttp2PriorKnowledge && identical(channel, channelContext.clientChannel)) {
+          channelContext.bufferHttp2Frames(decodeResult.forward!);
+          await channelContext.sendInitialHttp2Settings();
         } else {
           logger.w("[$channel] forward remoteChannel is null");
         }
@@ -142,18 +157,28 @@ class ChannelDispatcher extends ChannelHandler<Uint8List> {
       }
 
       if (data is HttpRequest) {
-        channelContext.currentRequest = data;
-        data.hostAndPort ??= channelContext.host ?? getHostAndPort(data, ssl: channel.isSsl);
-        if (data.headers.host != null && data.headers.host?.contains(":") == false) {
-          data.hostAndPort?.host = data.headers.host!;
+        if (data.protocolVersion == 'HTTP/2') {
+          final request = data;
+          final sent = channelContext.http2Requests.submit(request.streamId!, () async {
+            await prepareRequest(channelContext, channel, request);
+            if (channelContext.http2Requests.canForward(request.streamId!)) {
+              await handler.channelRead(channelContext, channel, request);
+            }
+          });
+          final guarded = sent.catchError((Object error, StackTrace trace) {
+            onError(channelContext, channel, error, trace: trace);
+          });
+          // 先排空现有帧，不能等较大流号发送后才去解析较小流号的后续 DATA。
+          if (buffer.isReadable()) await channelRead(channelContext, channel, Uint8List(0));
+          await guarded;
+          return;
         }
-
-        data.processInfo ??= await ProcessInfoUtils.getProcessByPort(channel.remoteSocketAddress, data.remoteDomain()!);
+        await prepareRequest(channelContext, channel, data);
       }
 
       if (data is HttpResponse) {
-        data.requestId = channelContext.currentRequest?.requestId ?? data.requestId;
         data.request ??= channelContext.currentRequest;
+        data.requestId = data.request?.requestId ?? data.requestId;
       }
 
       //websocket协议
@@ -169,8 +194,64 @@ class ChannelDispatcher extends ChannelHandler<Uint8List> {
       } else {
         await handler.channelRead(channelContext, channel, data!);
       }
+
+      // h2 streaming 请求：HEADERS 帧 emit 后，buffer 里可能还留着已到达的 DATA
+      // 帧字节（HEADERS 之后同一次 socket 读入的内容）。此时不再触发新的
+      // channelRead（Chrome 已经把整段字节发到 socket），需要主动把剩余字节
+      // 交给 decoder，让 DATA 帧走 forward 透传到远端。
+      // 只做一次：递归调用里 decodeResult.data == null，走完 forward 后 return。
+      if (data is HttpMessage && data.streamingBody && buffer.isReadable()) {
+        Channel? remote = channelContext.getAttribute(channel.id);
+        if (remote == null) {
+          logger.e("[$channel] h2 streaming but remoteChannel is null, drop buffered data");
+          buffer.clear();
+        } else {
+          await channelRead(channelContext, channel, Uint8List(0));
+        }
+      } else if (data is HttpMessage && data.protocolVersion == 'HTTP/2' && buffer.isReadable()) {
+        // 一个TCP读事件可能包含多个完整流；不能依赖下一次socket事件继续解码。
+        await channelRead(channelContext, channel, Uint8List(0));
+      }
     } catch (error, trace) {
       onError(channelContext, channel, error, trace: trace);
+    } finally {
+      _pendingReads.remove(pending);
+      if (!pending.isCompleted) pending.complete();
+    }
+  }
+
+  Future<void> prepareRequest(ChannelContext channelContext, Channel channel, HttpRequest data) async {
+    channelContext.currentRequest = data;
+    data.hostAndPort ??= channelContext.host ?? getHostAndPort(data, ssl: channel.isSsl);
+    if (data.headers.host != null && data.headers.host?.contains(":") == false) {
+      data.hostAndPort?.host = data.headers.host!;
+    }
+    await _fixAndroidVpnPort(channelContext, channel, data);
+    data.processInfo ??= await ProcessInfoUtils.getProcessByPort(channel.remoteSocketAddress, data.remoteDomain()!);
+  }
+
+  /// 修正 Android VPN 透明代理明文 HTTP 请求的目标端口。
+  ///
+  /// 客户端把请求当作直连发出时（uri 是路径而非绝对 URI），端口只能从 Host 头解析；
+  /// 若 Host 头未携带端口（例如 `curl -H "Host: x" http://x:10120/`），
+  /// [HostAndPort.of] 会兜底成 80，导致上游连接被拨到错误端口（#530）。
+  /// 此时向 VPN 侧查真实目的端口进行覆盖。
+  ///
+  /// SSL / HTTP2 走 SNI 嗅探或 `:authority`，已经拿到正确端口；
+  /// 其它明文情况（绝对 URI / Host 头自带端口）[getHostAndPort] 也能处理。
+  Future<void> _fixAndroidVpnPort(ChannelContext channelContext, Channel channel, HttpRequest data) async {
+    if (!Platform.isAndroid ||
+        channel.isSsl ||
+        data.protocolVersion == 'HTTP/2' ||
+        !data.uri.startsWith("/") ||
+        data.headers.host?.contains(":") == true ||
+        data.hostAndPort == null) {
+      return;
+    }
+
+    final vpnRemote = await ProcessInfoPlugin.getRemoteAddressByPort(channel.remoteSocketAddress.port);
+    if (vpnRemote != null && vpnRemote.port != data.hostAndPort!.port) {
+      data.hostAndPort = data.hostAndPort!.copyWith(port: vpnRemote.port);
     }
   }
 
@@ -216,13 +297,13 @@ class ChannelDispatcher extends ChannelHandler<Uint8List> {
     channel.dispatcher.channelHandle(rawCodec, SseChannelHandler(remoteChannel, response));
     remoteChannel.dispatcher.channelHandle(rawCodec, RelayHandler(channel));
 
-    // Flush any initial body bytes that were already read
+    // Flush any initial body bytes that were already read alongside the
+    // headers. Feed them straight to the new handler — going through `buffer`
+    // would replay the response-line/headers we already consumed, corrupting
+    // the SSE stream.
     if (initialBody != null && initialBody.isNotEmpty) {
-      // Place existing buffered bytes and let handler consume
-      buffer.add(initialBody);
-      var body = buffer.bytes;
       buffer.clear();
-      handler.channelRead(channelContext, channel, body);
+      handler.channelRead(channelContext, channel, Uint8List.fromList(initialBody));
     }
   }
 
@@ -239,9 +320,19 @@ class ChannelDispatcher extends ChannelHandler<Uint8List> {
       }
     }
 
-    // Fallback: generic relay for unsupported body types
-    buffer.add(decodeResult.forward ?? []);
-    relay(channelContext, channel, remoteChannel!);
+    // 没有可转发的对端通道（例如游离的 "200 Connection established" 代理应答），
+    // 无法透传，直接丢弃并关闭连接，避免对 null 强制解包导致崩溃。
+    if (remoteChannel == null) {
+      logger.w("[$channel] not supported parse and remoteChannel is null, close channel");
+      channel.close();
+      return;
+    }
+
+    // Fallback: generic relay for unsupported body types.
+    // `forward` is a view into the same buffer (decoder only advanced the
+    // reader index), and `relay` flushes the raw buffer via `.bytes`, so it
+    // must NOT be appended here or the body would be sent twice.
+    relay(channelContext, channel, remoteChannel);
 
     if (decodeResult.data is HttpResponse) {
       var response = decodeResult.data as HttpResponse;
@@ -259,7 +350,12 @@ class ChannelDispatcher extends ChannelHandler<Uint8List> {
 
   @override
   channelInactive(ChannelContext channelContext, Channel channel) async {
+    if (identical(channel, channelContext.clientChannel)) channelContext.http2Requests.close();
     await taskQueue.waitForAll();
+    //等待正在处理中的读事件完成(例如 HTTP/1.1 响应写回客户端), 避免服务端关闭时提前关闭对端连接导致 socket hang up
+    while (_pendingReads.isNotEmpty) {
+      await Future.wait(_pendingReads.map((c) => c.future).toList());
+    }
     channel.isOpen = false;
     handler.channelInactive(channelContext, channel);
   }

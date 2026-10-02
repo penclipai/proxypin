@@ -33,6 +33,7 @@ import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/component/widgets.dart';
 import 'package:proxypin/utils/har.dart';
 import 'package:proxypin/utils/listenable_list.dart';
+import 'package:proxypin/utils/platform.dart';
 
 import '../../content/panel.dart';
 import '../request/list.dart';
@@ -153,11 +154,25 @@ class _HistoryListState extends State<_HistoryListWidget> {
 
     return Scaffold(
         appBar: PreferredSize(
-            preferredSize: const Size.fromHeight(38),
+            preferredSize: const Size.fromHeight(36),
             child: AppBar(
-              title: Text(localizations.historyRecord, style: const TextStyle(fontSize: 14)),
+              toolbarHeight: 36,
+              titleSpacing: 8,
+              centerTitle: false,
+              title: Text(
+                localizations.historyRecord,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.82),
+                ),
+              ),
+              bottom: const PreferredSize(preferredSize: Size.fromHeight(1), child: Divider(height: 1, thickness: 0.4)),
               actions: [
-                IconButton(onPressed: import, icon: const Icon(Icons.input, size: 18), tooltip: localizations.import),
+                IconButton(
+                    onPressed: import,
+                    icon: const Icon(Icons.input, size: 18),
+                    constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                    tooltip: localizations.import),
                 const SizedBox(width: 3),
                 HistoryCacheTime(proxyServer.configuration, onSelected: (val) {
                   if (val == 0) {
@@ -177,13 +192,12 @@ class _HistoryListState extends State<_HistoryListWidget> {
   }
 
   //导入har
-  import() async {
-    final results = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['har']);
-    if (results == null || results.files.isEmpty) {
+  Future<void> import() async {
+    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['har']);
+    if (file == null) {
       return;
     }
 
-    var file = results.files.first;
     try {
       var historyItem = await storage.addHarFile(file.xFile);
       setState(() {
@@ -316,7 +330,7 @@ class _HistoryListState extends State<_HistoryListWidget> {
     String fileName =
         '${item.name.contains("ProxyPin") ? '' : 'ProxyPin'}${item.name}.har'.replaceAll(" ", "_").replaceAll(":", "_");
 
-    final String? path = await FilePicker.platform.saveFile(fileName: fileName);
+    final String? path = await Platforms.saveFileAdaptive(fileName: fileName);
     if (path == null) {
       return;
     }

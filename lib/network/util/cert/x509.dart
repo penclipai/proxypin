@@ -114,6 +114,23 @@ class X509Utils {
     return x509;
   }
 
+  /// 从证书 PEM 中提取 subject DN 的原始 ASN.1 编码字节。
+  /// 用于签发下级证书时把 issuer 设置为与 CA subject 二进制精确一致(含字符串类型),
+  /// 避免 iOS 等严格客户端因名称类型不匹配(如 UTF8String vs PrintableString)而无法构建信任链。
+  static Uint8List subjectDnBytesFromPem(String pem) {
+    var bytes = CryptoUtils.getBytesFromPEMString(pem);
+    var asn1Parser = ASN1Parser(bytes);
+    var topLevelSeq = asn1Parser.nextObject() as ASN1Sequence;
+    var tbsCertificateSeq = topLevelSeq.elements!.elementAt(0) as ASN1Sequence;
+
+    // v3 tbsCertificate: [0]=version, 1=serial, 2=sigAlg, 3=issuer, 4=validity, 5=subject
+    // v1(无 version 显式字段)时整体前移一位
+    var hasVersion = tbsCertificateSeq.elements!.elementAt(0) is! ASN1Integer;
+    var subjectIndex = hasVersion ? 5 : 4;
+    var subjectSeq = tbsCertificateSeq.elements!.elementAt(subjectIndex) as ASN1Sequence;
+    return subjectSeq.encodedBytes!;
+  }
+
   ///
   /// Generates a self signed certificate
   ///
@@ -134,9 +151,12 @@ class X509Utils {
     String serialNumber = '1',
     Map<String, String>? issuer,
     Map<String, String>? subject,
+    Uint8List? issuerRawBytes,
     ExtensionKeyUsage? keyUsage,
     List<ExtendedKeyUsage>? extKeyUsage,
     BasicConstraints? basicConstraints,
+    DateTime? notBefore,
+    DateTime? notAfter,
   }) {
     var data = ASN1Sequence();
 
@@ -157,17 +177,24 @@ class X509Utils {
     issuer ??= Map.from(caRoot.subject);
 
     // Add Issuer
-    var issuerSeq = ASN1Sequence();
-    for (var k in issuer.keys) {
-      var s = _identifier(k, issuer[k]!);
-      issuerSeq.add(s);
+    //优先使用 CA subject 的原始 DN 字节, 保证与签发 CA 二进制精确匹配(字符串类型 UTF8String/PrintableString 一致),
+    //否则 iOS 等严格客户端会因 issuer/subject 名称不匹配而无法构建证书链
+    if (issuerRawBytes != null) {
+      var issuerObj = ASN1Object.fromBytes(issuerRawBytes);
+      data.add(issuerObj);
+    } else {
+      var issuerSeq = ASN1Sequence();
+      for (var k in issuer.keys) {
+        var s = _identifier(k, issuer[k]!);
+        issuerSeq.add(s);
+      }
+      data.add(issuerSeq);
     }
-    data.add(issuerSeq);
 
     // Add Validity
     var validitySeq = ASN1Sequence();
-    validitySeq.add(ASN1UtcTime(DateTime.now().subtract(const Duration(days: 3)).toUtc()));
-    validitySeq.add(ASN1UtcTime(DateTime.now().add(Duration(days: days)).toUtc()));
+    validitySeq.add(ASN1UtcTime((notBefore ?? DateTime.now().subtract(const Duration(days: 3))).toUtc()));
+    validitySeq.add(ASN1UtcTime((notAfter ?? DateTime.now().add(Duration(days: days))).toUtc()));
     data.add(validitySeq);
 
     // Add Subject
@@ -215,7 +242,14 @@ class X509Utils {
       if (sans != null && sans.isNotEmpty) {
         var sanList = ASN1Sequence();
         for (var s in sans) {
-          sanList.add(ASN1PrintableString(stringValue: s, tag: 0x82));
+          var ipBytes = _ipAddressBytes(s);
+          if (ipBytes != null) {
+            //IP 地址必须使用 iPAddress(0x87) 类型并写入原始字节,
+            //若按 dNSName 编码, OkHttp/Android 等严格 HostnameVerifier 会校验失败
+            sanList.add(ASN1Object(tag: 0x87)..valueBytes = ipBytes);
+          } else {
+            sanList.add(ASN1PrintableString(stringValue: s, tag: 0x82));
+          }
         }
         var octetString = ASN1OctetString(octets: sanList.encode());
 
@@ -662,6 +696,17 @@ class X509Utils {
       }
     }
     return basicConstraints;
+  }
+
+  /// 解析 IPv4/IPv6 地址的原始字节(IPv4 4字节, IPv6 16字节), 非 IP 返回 null
+  ///
+  /// IPv6 可能携带方括号(如 `[::1]`), 需先去除
+  static Uint8List? _ipAddressBytes(String value) {
+    var host = value;
+    if (host.startsWith('[') && host.endsWith(']') && host.length > 2) {
+      host = host.substring(1, host.length - 1);
+    }
+    return InternetAddress.tryParse(host)?.rawAddress;
   }
 
   ///

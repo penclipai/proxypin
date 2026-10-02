@@ -17,13 +17,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
+import 'package:get/get.dart';
 import 'package:image_pickers/image_pickers.dart';
+import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/components/manager/request_rewrite_manager.dart';
 import 'package:proxypin/network/components/manager/rewrite_rule.dart';
 import 'package:proxypin/network/http/content_type.dart';
@@ -35,15 +37,25 @@ import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/desktop/setting/request_rewrite.dart';
 import 'package:proxypin/ui/mobile/setting/request_rewrite.dart';
+import 'package:proxypin/utils/crypto_body_decoder.dart';
+import 'package:proxypin/utils/css_formatter.dart';
+import 'package:proxypin/utils/html_formatter.dart';
+import 'package:proxypin/utils/js_formatter.dart';
 import 'package:proxypin/utils/lang.dart';
 import 'package:proxypin/utils/num.dart';
 import 'package:proxypin/utils/platform.dart';
+import 'package:proxypin/utils/xml_formatter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../component/json/json_text.dart';
 import '../component/search/highlight_text.dart';
 import '../component/search/search_controller.dart';
+import '../component/search/virtualized_highlight_text.dart';
 import '../toolbox/encoder.dart';
+
+/// body 选区菜单：整个文本即全部内容，复制全部用“全选”即可，故不提供“复制值”
+Widget bodyContextMenu(BuildContext context, EditableTextState editableTextState) =>
+    contextMenu(context, editableTextState, copyValue: false);
 
 ///请求响应的body部分
 ///@Author wanghongen
@@ -75,6 +87,11 @@ class HttpBodyState extends State<HttpBodyWidget> {
   final SearchTextController searchController = SearchTextController();
 
   AppLocalizations get localizations => AppLocalizations.of(context)!;
+  bool showDecoded = false;
+  CryptoDecodedResult? decoded;
+
+  //当前请求是否命中已启用的重写规则
+  final RxBool rewriteEnabled = false.obs;
 
   @override
   void initState() {
@@ -82,6 +99,37 @@ class HttpBodyState extends State<HttpBodyWidget> {
     if (widget.windowController != null) {
       HardwareKeyboard.instance.addHandler(onKeyEvent);
     }
+
+    _loadDecoded();
+    _loadRewriteEnabled();
+  }
+
+  @override
+  void didUpdateWidget(covariant HttpBodyWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.httpMessage?.requestId != widget.httpMessage?.requestId) {
+      showDecoded = false;
+      decoded = null;
+      rewriteEnabled.value = false;
+      _loadDecoded();
+      _loadRewriteEnabled();
+    }
+  }
+
+  ///计算当前请求是否命中已启用的重写规则
+  Future<void> _loadRewriteEnabled() async {
+    final message = widget.httpMessage;
+    if (message == null || widget.hideRequestRewrite) return;
+
+    HttpRequest? request = message is HttpRequest ? message : (message as HttpResponse).request;
+    if (request == null) return;
+
+    var types = message is HttpRequest
+        ? [RuleType.requestReplace, RuleType.requestUpdate, RuleType.redirect]
+        : [RuleType.responseReplace, RuleType.responseUpdate];
+
+    var requestRewrites = await RequestRewriteManager.instance;
+    rewriteEnabled.value = requestRewrites.getRewriteRule(request.domainPath, types) != null;
   }
 
   /// 按键事件
@@ -94,6 +142,15 @@ class HttpBodyState extends State<HttpBodyWidget> {
     }
 
     return false;
+  }
+
+  Future<void> _loadDecoded() async {
+    final message = widget.httpMessage;
+    if (message == null) return;
+    decoded = await CryptoBodyDecoder.maybeDecode(message);
+    if (mounted && decoded != null && decoded!.hasText) {
+      setState(() {});
+    }
   }
 
   @override
@@ -208,52 +265,50 @@ class HttpBodyState extends State<HttpBodyWidget> {
     bool isImage = widget.httpMessage?.contentType == ContentType.image;
     VisualDensity visualDensity = Platforms.isMobile() ? VisualDensity.compact : VisualDensity.standard;
 
-    var list = [
-      Text('$type Body', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-      const SizedBox(width: 18),
-      InkWell(
-        key: searchIconKey,
-        child: Icon(Icons.search, size: 20),
-        // tooltip: localizations.search,
-        onTap: () {
-          if (searchController.isSearchOverlayVisible) {
-            searchController.removeSearchOverlay();
-          } else {
-            RenderBox renderBox = searchIconKey.currentContext?.findRenderObject() as RenderBox;
-            Offset position = renderBox.localToGlobal(Offset.zero); // 获取搜索图标的位置
-            searchController.showSearchOverlay(context, top: position.dy + renderBox.size.height + 50, right: 10);
-          }
-        },
-      ),
-      const SizedBox(width: 5),
-      isImage
-          ? downloadImageButton()
-          : IconButton(
-              visualDensity: visualDensity,
-              iconSize: 16,
-              icon: Icon(Icons.copy),
-              tooltip: localizations.copy,
-              onPressed: () async {
-                var body = await bodyKey.currentState?.getBody();
-                if (body == null) {
-                  return;
-                }
-                Clipboard.setData(ClipboardData(text: body)).then((value) {
-                  if (mounted) FlutterToastr.show(localizations.copied, context);
-                });
-              }),
-    ];
+    final isMobile = Platforms.isMobile();
 
-    if (!widget.hideRequestRewrite) {
-      list.add(IconButton(
-          visualDensity: visualDensity,
-          iconSize: 16,
-          icon: const Icon(Icons.edit_document),
-          tooltip: localizations.requestRewrite,
-          onPressed: showRequestRewrite));
-    }
+    // Build common actions as widgets so we can either display them inline (desktop)
+    // or move them into an overflow menu (mobile) to avoid hiding important buttons.
+    final searchBtn = InkWell(
+      key: searchIconKey,
+      child: const Icon(Icons.search, size: 20),
+      onTap: () {
+        if (searchController.isSearchOverlayVisible) {
+          searchController.removeSearchOverlay();
+        } else {
+          RenderBox renderBox = searchIconKey.currentContext?.findRenderObject() as RenderBox;
+          Offset position = renderBox.localToGlobal(Offset.zero);
+          searchController.showSearchOverlay(context, top: position.dy + renderBox.size.height + 50, right: 10);
+        }
+      },
+    );
 
-    list.add(IconButton(
+    final copyBtn = isImage
+        ? downloadImageButton()
+        : IconButton(
+            visualDensity: visualDensity,
+            iconSize: 16,
+            icon: const Icon(Icons.copy),
+            tooltip: localizations.copy,
+            onPressed: () async {
+              var body = await bodyKey.currentState?.getBody();
+              if (body == null) return;
+              Clipboard.setData(ClipboardData(text: body)).then((_) {
+                if (mounted) FlutterToastr.show(localizations.copied, context);
+              });
+            },
+          );
+
+    final rewriteBtn = IconButton(
+      visualDensity: visualDensity,
+      iconSize: 16,
+      icon: Obx(() => Icon(Icons.edit_document,
+          color: rewriteEnabled.value ? Colors.deepOrangeAccent : null)),
+      tooltip: localizations.requestRewrite,
+      onPressed: showRequestRewrite,
+    );
+
+    final encodeBtn = IconButton(
         visualDensity: visualDensity,
         iconSize: 20,
         icon: const Icon(Icons.text_format),
@@ -263,20 +318,95 @@ class HttpBodyState extends State<HttpBodyWidget> {
           if (mounted) {
             encodeWindow(EncoderType.base64, context, body);
           }
-        }));
-    if (!inNewWindow) {
-      list.add(IconButton(
-          visualDensity: visualDensity,
-          iconSize: 16,
-          icon: const Icon(Icons.open_in_new),
-          tooltip: localizations.newWindow,
-          onPressed: () => openNew()));
+        });
+
+    final openNewBtn = IconButton(
+        visualDensity: visualDensity,
+        iconSize: 16,
+        icon: const Icon(Icons.open_in_new),
+        tooltip: localizations.newWindow,
+        onPressed: () => openNew());
+
+    Widget? cryptoToggle;
+    if (decoded != null) {
+      cryptoToggle = TextButton.icon(
+        onPressed: () {
+          setState(() {
+            showDecoded = !showDecoded;
+          });
+        },
+        icon: Icon(showDecoded ? Icons.lock_open : Icons.lock, size: 18),
+        label: Text(showDecoded ? localizations.cryptoDecoded : localizations.cryptoDecodeToggle),
+      );
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(children: list),
-    );
+    // Mobile UX:
+    // - If there is NO crypto result, keep the original (previous) horizontal-scroll title bar.
+    // - Only when crypto is available, switch to the compact overflow-menu layout to keep
+    //   the crypto toggle visible.
+    if (isMobile && cryptoToggle != null) {
+      final overflowItems = <PopupMenuEntry<String>>[];
+      if (!widget.hideRequestRewrite) {
+        overflowItems.add(PopupMenuItem(
+            value: 'rewrite',
+            child: Obx(() => Text(localizations.requestRewrite,
+                style: rewriteEnabled.value ? TextStyle(color: Theme.of(context).colorScheme.primary) : null))));
+      }
+      overflowItems.add(PopupMenuItem(value: 'encode', child: Text(localizations.encode)));
+      if (!inNewWindow) {
+        overflowItems.add(PopupMenuItem(value: 'new_window', child: Text(localizations.newWindow)));
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('$type Body', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          const SizedBox(width: 8),
+          searchBtn,
+          const SizedBox(width: 4),
+          copyBtn,
+          const SizedBox(width: 4),
+          Flexible(child: cryptoToggle),
+          if (overflowItems.isNotEmpty)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 20),
+              onSelected: (v) {
+                if (v == 'rewrite') showRequestRewrite();
+                if (v == 'encode') {
+                  bodyKey.currentState?.getBody().then((body) {
+                    if (mounted) encodeWindow(EncoderType.base64, context, body);
+                  });
+                }
+                if (v == 'new_window') openNew();
+              },
+              itemBuilder: (_) => overflowItems,
+            ),
+        ],
+      );
+    }
+
+    // Default (desktop + mobile without crypto): keep the previous full inline actions
+    // (horizontal scroll when needed).
+    final list = <Widget>[
+      Text('$type Body', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      const SizedBox(width: 18),
+      searchBtn,
+      const SizedBox(width: 4),
+      copyBtn,
+    ];
+
+    if (!widget.hideRequestRewrite) {
+      list.add(rewriteBtn);
+    }
+    list.add(encodeBtn);
+    if (!inNewWindow) {
+      list.add(openNewBtn);
+    }
+    if (cryptoToggle != null) {
+      list.add(cryptoToggle);
+    }
+
+    return SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: list));
   }
 
   ///下载图片
@@ -292,7 +422,9 @@ class HttpBodyState extends State<HttpBodyWidget> {
             return;
           }
           var bytes = Uint8List.fromList(body);
-          if (Platforms.isMobile()) {
+          var extension = _imageExtension(bytes, bodyKey.currentState?.message?.headers.contentType);
+          var fileName = "image_${DateTime.now().millisecondsSinceEpoch}.$extension";
+          if (Platform.isIOS) {
             String? path = await ImagePickers.saveByteDataImageToGallery(bytes);
             if (path != null && mounted) {
               FlutterToastr.show(localizations.saveSuccess, context, duration: 2, rootNavigator: true);
@@ -300,17 +432,61 @@ class HttpBodyState extends State<HttpBodyWidget> {
             return;
           }
 
-          if (Platforms.isDesktop()) {
-            var fileName = "image_${DateTime.now().millisecondsSinceEpoch}.png";
-            String? path = (await FilePicker.platform.saveFile(fileName: fileName));
-            if (path == null) return;
-
-            await File(path).writeAsBytes(bytes);
-            if (mounted) {
-              FlutterToastr.show(localizations.saveSuccess, context, duration: 2);
-            }
+          final saved = await FilePicker.saveFile(fileName: fileName, bytes: bytes, type: FileType.image);
+          if (saved != null && mounted) {
+            FlutterToastr.show(localizations.saveSuccess, context, duration: 2, rootNavigator: true);
           }
         });
+  }
+
+  String _imageExtension(Uint8List bytes, String? contentType) {
+    var type = contentType?.toLowerCase() ?? '';
+    if (type.contains('jpeg') || type.contains('jpg')) return 'jpg';
+    if (type.contains('png')) return 'png';
+    if (type.contains('webp')) return 'webp';
+    if (type.contains('gif')) return 'gif';
+    if (type.contains('bmp')) return 'bmp';
+    if (type.contains('svg')) return 'svg';
+
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return 'webp';
+    }
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47 &&
+        bytes[4] == 0x0D &&
+        bytes[5] == 0x0A &&
+        bytes[6] == 0x1A &&
+        bytes[7] == 0x0A) {
+      return 'png';
+    }
+    if (bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+      return 'jpg';
+    }
+    if (bytes.length >= 6 &&
+        bytes[0] == 0x47 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x38 &&
+        (bytes[4] == 0x37 || bytes[4] == 0x39) &&
+        bytes[5] == 0x61) {
+      return 'gif';
+    }
+    if (bytes.length >= 2 && bytes[0] == 0x42 && bytes[1] == 0x4D) {
+      return 'bmp';
+    }
+
+    return 'png';
   }
 
   ///展示请求重写
@@ -364,7 +540,7 @@ class HttpBodyState extends State<HttpBodyWidget> {
       ));
       window
         ..setTitle(widget.httpMessage is HttpRequest ? localizations.requestBody : localizations.responseBody)
-        ..setFrame(const Offset(100, 100) & Size(800 * ratio, size.height * ratio))
+        ..setSize(Size(800 * ratio, size.height * ratio))
         ..center()
         ..show();
       return;
@@ -395,7 +571,31 @@ class _Body extends StatefulWidget {
   }
 }
 
+// Top-level isolate function for compute()
+// Accepts a Map<String, String> with keys: 'type' and 'body'.
+String _formatTextBodyIsolate(Map<String, String> args) {
+  final typeName = args['type'] ?? 'text';
+  final body = args['body'] ?? '';
+  final type = ViewType.values.firstWhere((v) => v.name == typeName, orElse: () => ViewType.text);
+
+  try {
+    if (type == ViewType.formUrl) return Uri.decodeFull(body);
+    if (type == ViewType.html) return HTML.pretty(body);
+    if (type == ViewType.xml) return XML.pretty(body);
+    if (type == ViewType.css) return CSS.pretty(body);
+    if (type == ViewType.js) return JS.pretty(body);
+    if (type == ViewType.jsonText || type == ViewType.json) {
+      final jsonObject = json.decode(body);
+      return const JsonEncoder.withIndent("  ").convert(jsonObject);
+    }
+  } catch (_) {}
+
+  return body;
+}
+
 class _BodyState extends State<_Body> {
+  static const int _virtualizedThreshold = 100000;
+
   late ViewType viewType;
   HttpMessage? message;
 
@@ -418,35 +618,86 @@ class _BodyState extends State<_Body> {
     return _getBody(viewType);
   }
 
+  HttpMessage? _effectiveMessage(HttpBodyState? parent) {
+    if (parent?.showDecoded == true && parent?.decoded != null && message != null) {
+      return _DecodedHttpMessage(message!, parent!.decoded!);
+    }
+    return message;
+  }
+
+  Future<String> _formatTextBody(ViewType type, String body) async {
+    try {
+      if (type == ViewType.formUrl) {
+        return Uri.decodeFull(body);
+      }
+
+      final heavyTypes = {
+        ViewType.html,
+        ViewType.xml,
+        ViewType.css,
+        ViewType.js,
+        ViewType.json,
+        ViewType.jsonText,
+      };
+
+      // For small bodies avoid isolate overhead
+      if (!heavyTypes.contains(type) || body.length < 10000) {
+        try {
+          if (type == ViewType.html) return HTML.pretty(body);
+          if (type == ViewType.xml) return XML.pretty(body);
+          if (type == ViewType.css) return CSS.pretty(body);
+          if (type == ViewType.js) return JS.pretty(body);
+          if (type == ViewType.jsonText || type == ViewType.json) {
+            final jsonObject = json.decode(body);
+            return const JsonEncoder.withIndent("  ").convert(jsonObject);
+          }
+        } catch (_) {
+          return body;
+        }
+        return body;
+      }
+
+      // Use compute to perform heavy formatting in an isolate
+      final result = await compute(_formatTextBodyIsolate, {'type': type.name, 'body': body});
+      return result;
+    } catch (_) {
+      return body;
+    }
+  }
+
   Future<String?> getBody() async {
-    if (message?.isWebSocket == true) {
-      return message?.messages.map((e) => e.payloadDataAsString).join("\n");
+    final parent = context.findAncestorStateOfType<HttpBodyState>();
+    final currentMessage = _effectiveMessage(parent);
+
+    if (currentMessage?.isWebSocket == true) {
+      return currentMessage?.messages.map((e) => e.payloadDataAsString).join("\n");
     }
 
-    if (message == null || message?.body == null) {
+    if (currentMessage == null || currentMessage.body == null) {
       return null;
     }
 
     if (viewType == ViewType.hex) {
-      return message!.body!.map(intToHex).join(" ");
+      return currentMessage.body!.map(intToHex).join(" ");
     }
 
-    try {
-      if (viewType == ViewType.formUrl) {
-        return Uri.decodeFull(message!.bodyAsString);
-      }
+    final body = parent?.showDecoded == true && parent?.decoded?.text != null
+        ? parent!.decoded!.text!
+        : await currentMessage.decodeBodyString();
 
-      if (viewType == ViewType.jsonText || viewType == ViewType.json) {
-        //json格式化
-        var jsonObject = json.decode(await message!.decodeBodyString());
-        return const JsonEncoder.withIndent("  ").convert(jsonObject);
-      }
-    } catch (_) {}
-    return message!.decodeBodyString();
+    if (viewType == ViewType.text) {
+      return body;
+    }
+
+    return await _formatTextBody(viewType, body);
   }
 
   Widget _getBody(ViewType type) {
-    if (message?.isWebSocket == true || (message?.contentType == ContentType.sse && message?.messages.isNotEmpty == true)) {
+    final parent = context.findAncestorStateOfType<HttpBodyState>();
+    final message = _effectiveMessage(parent);
+
+    if (message?.isWebSocket == true ||
+        (message?.contentType == ContentType.sse && message?.messages.isNotEmpty == true)) {
       List<Widget>? list = message?.messages
           .map((e) => Container(
               margin: const EdgeInsets.only(top: 2, bottom: 2),
@@ -474,28 +725,28 @@ class _BodyState extends State<_Body> {
       );
     }
 
-    if (message == null || message?.body == null) {
+    if (message == null || message.body == null) {
       return const SizedBox();
     }
 
     if (type == ViewType.image) {
-      return Center(child: Image.memory(Uint8List.fromList(message?.body ?? []), fit: BoxFit.scaleDown));
+      return Center(child: Image.memory(Uint8List.fromList(message.body ?? []), fit: BoxFit.scaleDown));
     }
     if (type == ViewType.video) {
       return const Center(child: Text("video not support preview"));
     }
     if (type == ViewType.hex) {
-      return HexViewer(data: Uint8List.fromList(message!.body!), searchController: widget.searchController);
+      return HexViewer(data: Uint8List.fromList(message.body!), searchController: widget.searchController);
     }
 
     if (type == ViewType.formUrl) {
       return HighlightTextWidget(
-          text: Uri.decodeFull(message!.getBodyString()),
+          text: _formatTextBodyIsolate({'type': type.name, 'body': message.getBodyString()}),
           searchController: widget.searchController,
-          contextMenuBuilder: contextMenu);
+          contextMenuBuilder: bodyContextMenu);
     }
 
-    return futureWidget(message!.decodeBodyString(), initialData: message!.getBodyString(), (body) {
+    return futureWidget(message.decodeBodyString(), initialData: message.getBodyString(), (body) {
       try {
         if (type == ViewType.jsonText) {
           var jsonObject = json.decode(body);
@@ -504,7 +755,8 @@ class _BodyState extends State<_Body> {
               indent: Platforms.isDesktop() ? '    ' : '  ',
               colorTheme: ColorTheme.of(context),
               searchController: widget.searchController,
-              scrollController: widget.scrollController);
+              scrollController: widget.scrollController,
+              contextMenuBuilder: bodyContextMenu);
         }
 
         if (type == ViewType.json) {
@@ -512,15 +764,65 @@ class _BodyState extends State<_Body> {
               colorTheme: ColorTheme.of(context), searchController: widget.searchController);
         }
 
-        return HighlightTextWidget(
-            text: body, searchController: widget.searchController, contextMenuBuilder: contextMenu);
+        return _buildTextBodyViewer(type, body, message: message);
       } catch (e) {
         logger.e(e, stackTrace: StackTrace.current);
       }
 
       return HighlightTextWidget(
-          text: body, searchController: widget.searchController, contextMenuBuilder: contextMenu);
+          text: body, searchController: widget.searchController, contextMenuBuilder: bodyContextMenu);
     });
+  }
+
+  String? _languageForViewType(ViewType type, HttpMessage? message) {
+    switch (type) {
+      case ViewType.html:
+        return 'html';
+      case ViewType.xml:
+        return 'xml';
+      case ViewType.css:
+        return 'css';
+      case ViewType.js:
+        return 'javascript';
+      case ViewType.json:
+      case ViewType.jsonText:
+        return 'json';
+      default:
+        return null;
+    }
+  }
+
+  Widget _buildTextBodyViewer(
+    ViewType type,
+    String text, {
+    HttpMessage? message,
+  }) {
+    final language = _languageForViewType(type, message);
+    final showVirtualized = text.length > _virtualizedThreshold;
+
+    // Format asynchronously (may use compute)
+    final futureFormatted = _formatTextBody(type, text);
+
+    return futureWidget(
+      initialData: text.substring(0, min(text.length, 10000)), // Show a preview while formatting
+      futureFormatted,
+      (formattedText) {
+        if (showVirtualized) {
+          return VirtualizedHighlightText(
+            text: formattedText,
+            language: language,
+            searchController: widget.searchController,
+            scrollController: widget.scrollController,
+          );
+        }
+
+        return HighlightTextWidget(
+            language: language,
+            text: formattedText,
+            searchController: widget.searchController,
+            contextMenuBuilder: bodyContextMenu);
+      },
+    );
   }
 }
 
@@ -541,6 +843,13 @@ class Tabs {
 
     if (contentType == ContentType.json) {
       tabs.list.add(ViewType.jsonText);
+    }
+
+    if (contentType == ContentType.html ||
+        contentType == ContentType.xml ||
+        contentType == ContentType.js ||
+        contentType == ContentType.css) {
+      tabs.list.add(ViewType.text);
     }
 
     tabs.list.add(ViewType.of(contentType) ?? ViewType.text);
@@ -570,6 +879,7 @@ enum ViewType {
   json("JSON"),
   jsonText("JSON Text"),
   html("HTML"),
+  xml("XML"),
   image("Image"),
   video("Video"),
   css("CSS"),
@@ -604,7 +914,7 @@ class HexViewer extends StatelessWidget {
         style: const TextStyle(fontFamily: 'Courier', fontSize: 14),
         text: _formatHex(data, bytesPerRow),
         searchController: searchController,
-        contextMenuBuilder: contextMenu);
+        contextMenuBuilder: bodyContextMenu);
   }
 
   String _formatHex(Uint8List data, int bytesPerRow) {
@@ -642,4 +952,20 @@ class HexViewer extends StatelessWidget {
     }
     return buffer.toString();
   }
+}
+
+class _DecodedHttpMessage extends HttpMessage {
+  final HttpMessage original;
+  final CryptoDecodedResult decoded;
+
+  _DecodedHttpMessage(this.original, this.decoded) : super(original.protocolVersion) {
+    headers.addAll(original.headers);
+    body = decoded.bytes;
+  }
+
+  @override
+  Map<String, dynamic> toJson() => original.toJson();
+
+  @override
+  String? get requestUrl => original.requestUrl;
 }

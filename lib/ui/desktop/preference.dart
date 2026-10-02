@@ -82,7 +82,11 @@ class _PreferenceState extends State<Preference> {
                     items: [
                       DropdownMenuItem(value: null, child: Text(localizations.followSystem)),
                       const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "zh"), child: Text("简体中文")),
-                      const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "zh", scriptCode: "Hant"), child: Text("繁體中文")),
+                      const DropdownMenuItem(
+                          value: Locale.fromSubtags(languageCode: "zh", scriptCode: "Hant"), child: Text("繁體中文")),
+                      const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "vi"), child: Text("Tiếng Việt")),
+                      const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "th"), child: Text("ไทย")),
+                      const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "es"), child: Text("Español")),
                       const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "en"), child: Text("English")),
                     ]),
               ]),
@@ -122,7 +126,19 @@ class _PreferenceState extends State<Preference> {
               const Divider(),
               ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: Text(localizations.autoStartup), //默认是否启动
+                  title: Text(localizations.minimizeToTrayTitle, style: titleStyle),
+                  subtitle: Text(localizations.minimizeToTraySubtitle, style: subtitleStyle),
+                  trailing: SwitchWidget(
+                      scale: 0.75,
+                      value: appConfiguration.minimizeToTray ?? false,
+                      onChanged: (value) {
+                        appConfiguration.minimizeToTray = value;
+                        appConfiguration.flushConfig();
+                      })),
+              ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(localizations.autoStartup, style: titleStyle),
+                  //默认是否启动
                   subtitle: Text(localizations.autoStartupDescribe, style: subtitleStyle),
                   trailing: SwitchWidget(
                       scale: 0.75,
@@ -133,19 +149,18 @@ class _PreferenceState extends State<Preference> {
                       })),
               ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: Text(localizations.headerExpanded),
-                  subtitle: Text(localizations.headerExpandedSubtitle, style: subtitleStyle),
+                  title: Text(localizations.clearConfirm, style: titleStyle),
+                  subtitle: Text(localizations.clearConfirmSubtitle, style: subtitleStyle),
                   trailing: SwitchWidget(
                       scale: 0.75,
-                      value: appConfiguration.headerExpanded,
+                      value: appConfiguration.clearConfirm,
                       onChanged: (value) {
-                        appConfiguration.headerExpanded = value;
+                        appConfiguration.clearConfirm = value;
                         appConfiguration.flushConfig();
                       })),
-              SizedBox(height: 5),
               ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: Text(localizations.memoryCleanup),
+                  title: Text(localizations.memoryCleanup, style: titleStyle),
                   subtitle: Text(localizations.memoryCleanupSubtitle, style: subtitleStyle),
                   trailing: memoryCleanup(context, localizations)),
 

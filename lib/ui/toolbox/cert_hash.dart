@@ -16,7 +16,7 @@
 
 import 'dart:io';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -30,7 +30,7 @@ import 'package:proxypin/utils/platform.dart';
 ///证书哈希名称查看
 ///@author Hongen Wang
 class CertHashPage extends StatefulWidget {
-  final int? windowId;
+  final String? windowId;
 
   const CertHashPage({super.key, this.windowId});
 
@@ -83,11 +83,11 @@ class _CertHashPageState extends State<CertHashPage> {
           Wrap(alignment: WrapAlignment.end, children: [
             ElevatedButton.icon(
                 onPressed: () async {
-                  FilePickerResult? result = await FilePicker.platform
-                      .pickFiles(type: FileType.custom, allowedExtensions: ['crt', 'pem', 'cer', 'der']);
-                  if (result == null) return;
+                  final picked = await FilePicker.pickFile(
+                      type: FileType.custom, allowedExtensions: ['crt', 'pem', 'cer', 'der']);
+                  if (picked == null) return;
 
-                  File file = File(result.files.single.path!);
+                  File file = File(picked.path!);
                   var bytes = await file.readAsBytes();
                   input.text = tryDerFormat(bytes) ?? String.fromCharCodes(bytes);
                   getSubjectName();
@@ -138,7 +138,7 @@ class _CertHashPageState extends State<CertHashPage> {
         ]));
   }
 
-  getSubjectName() {
+  void getSubjectName() {
     var content = input.text;
     if (content.isEmpty) return;
     try {

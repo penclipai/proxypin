@@ -44,16 +44,20 @@ class ExpiringCache<K, V> {
     return value;
   }
 
+  bool containsKey(K key) {
+    return _cache.containsKey(key);
+  }
+
   V? get(K key) {
     return _cache[key];
   }
 
   V? operator [](K key) => get(key);
 
-  void remove(K key) {
+  V? remove(K key) {
     _expirationTimes[key]?.cancel();
     _expirationTimes.remove(key);
-    _cache.remove(key);
+    return _cache.remove(key);
   }
 
   void clear() {
@@ -65,6 +69,52 @@ class ExpiringCache<K, V> {
   }
 }
 
+/// A simple LRU (Least Recently Used) cache implementation using LinkedHashSet.
+class LruCacheSet<K> {
+  final int capacity;
+  final _cache = LinkedHashSet<K>();
+
+  LruCacheSet(this.capacity);
+
+  bool add(K key) {
+    bool newEntry = !_cache.contains(key);
+    if (!newEntry) {
+      // Move the accessed key to the end to show that it was recently used
+      _cache.remove(key);
+    } else if (_cache.length == capacity) {
+      // Remove the first key (least recently used)
+      _cache.remove(_cache.first);
+    }
+    _cache.add(key);
+    return newEntry;
+  }
+
+  bool contains(K key) {
+    return _cache.contains(key);
+  }
+
+  void remove(K key) {
+    _cache.remove(key);
+  }
+
+  void removeAll(Iterable<K> keys) {
+    for (var key in keys) {
+      _cache.remove(key);
+    }
+  }
+
+  void removeWhere(bool Function(K key) test) {
+    _cache.removeWhere(test);
+  }
+
+  int get length => _cache.length;
+
+  void clear() {
+    _cache.clear();
+  }
+}
+
+/// A simple LRU (Least Recently Used) cache implementation using LinkedHashMap.
 class LruCache<K, V> {
   final int capacity;
   final _cache = LinkedHashMap<K, V>();

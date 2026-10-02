@@ -10,6 +10,7 @@
 .history
 .svn/
 .swiftpm/
+.mimocode/
 migrate_working_dir/
 Podfile.lock
 # IntelliJ related
@@ -41,6 +42,8 @@ ProxyPin_**.har
 .pub-cache/
 .pub/
 /build/
+.vscode/
+.fvm/
 
 # Symbolication related
 app.*.symbols
@@ -56,3 +59,4 @@ app.*.map.json
 l10n_errors.txt
 pubspec.lock
 /dist/
+.claude/

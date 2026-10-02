@@ -16,26 +16,55 @@
 
 import 'dart:convert';
 
+import 'package:code_forge/code_forge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:re_highlight/styles/atom-one-dark.dart';
+import 'package:re_highlight/styles/atom-one-light.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/channel/host_port.dart';
+import 'package:proxypin/network/components/manager/environment_manager.dart';
+import 'package:proxypin/network/http/content_type.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/http/http_headers.dart';
 import 'package:proxypin/network/http/http_client.dart';
+import 'package:proxypin/ui/component/env_var_highlight.dart';
+import 'package:proxypin/ui/component/form_body_editor.dart';
+import 'package:proxypin/ui/component/search/finder.dart';
+import 'package:proxypin/ui/component/state_component.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/body.dart';
 import 'package:proxypin/utils/curl.dart';
+import 'package:proxypin/utils/highlight_languages.dart';
+import 'package:proxypin/utils/form_url.dart';
+import 'package:proxypin/utils/multipart.dart';
 import 'package:proxypin/utils/lang.dart';
+import 'package:proxypin/utils/xml_formatter.dart';
+
+import 'package:proxypin/ui/mobile/request/request_editor_source.dart';
+
+import '../../component/http_method_popup.dart';
 
 /// @author wanghongen
 class MobileRequestEditor extends StatefulWidget {
   final HttpRequest? request;
   final ProxyServer? proxyServer;
+  final RequestEditorSource source;
+  final Function(HttpRequest? request)? onExecuteRequest;
+  final Function(HttpResponse? response)? onExecuteResponse;
+  final HttpResponse? response;
 
-  const MobileRequestEditor({super.key, this.request, required this.proxyServer});
+  const MobileRequestEditor({
+    super.key,
+    this.request,
+    this.response,
+    required this.proxyServer,
+    this.source = RequestEditorSource.editor,
+    this.onExecuteRequest,
+    this.onExecuteResponse,
+  });
 
   @override
   State<StatefulWidget> createState() {
@@ -56,6 +85,8 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
   HttpRequest? request;
   HttpResponse? response;
 
+  bool executed = false;
+
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
   var tabs = const [
@@ -65,6 +96,16 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
 
   @override
   void dispose() {
+    if ((widget.source == RequestEditorSource.breakpointRequest ||
+            widget.source == RequestEditorSource.breakpointResponse) &&
+        !executed) {
+      if (widget.source == RequestEditorSource.breakpointRequest) {
+        widget.onExecuteRequest?.call(null);
+      } else {
+        widget.onExecuteResponse?.call(null);
+      }
+    }
+
     tabController.dispose();
     responseChange.dispose();
     _expanded.clear();
@@ -75,8 +116,12 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
   void initState() {
     super.initState();
 
-    tabController = TabController(length: tabs.length, vsync: this);
+    tabController = TabController(
+        length: tabs.length,
+        vsync: this,
+        initialIndex: widget.source == RequestEditorSource.breakpointResponse ? 1 : 0);
     request = widget.request;
+    response = widget.response;
     if (widget.request == null) {
       curlParse();
     }
@@ -109,7 +154,7 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
                         setState(() {
                           request = Curl.parse(text!);
                           requestKey.currentState?.change(request!);
-                          requestLineKey.currentState?.change(request?.requestUrl, request?.method.name);
+                          requestLineKey.currentState?.change(request?.requestUrl, request?.method);
                         });
                       } catch (e) {
                         FlutterToastr.show(localizations.fail, context);
@@ -132,6 +177,14 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
       ];
     }
 
+    var buttonText = localizations.send;
+    IconData icon = Icons.send;
+    if (widget.source == RequestEditorSource.breakpointRequest ||
+        widget.source == RequestEditorSource.breakpointResponse) {
+      buttonText = localizations.execute;
+      icon = Icons.play_arrow;
+    }
+
     return Scaffold(
         appBar: AppBar(
             title: Text(localizations.httpRequest, style: const TextStyle(fontSize: 16)),
@@ -141,7 +194,16 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
                 onPressed: () => Navigator.pop(context),
                 child: Text(localizations.cancel, style: Theme.of(context).textTheme.bodyMedium)),
             actions: [
-              TextButton.icon(icon: const Icon(Icons.send), label: Text(localizations.send), onPressed: sendRequest)
+              TextButton.icon(
+                  icon: Icon(icon),
+                  label: Text(buttonText),
+                  onPressed: () {
+                    if (widget.source == RequestEditorSource.editor) {
+                      sendRequest();
+                    } else {
+                      executeBreakpoint();
+                    }
+                  })
             ],
             bottom: TabBar(controller: tabController, tabs: tabs)),
         body: GestureDetector(
@@ -154,6 +216,7 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
                   message: request,
                   key: requestKey,
                   urlQueryNotifier: _queryNotifier,
+                  readOnly: widget.source == RequestEditorSource.breakpointResponse,
                 ),
                 ValueListenableBuilder(
                     valueListenable: responseChange,
@@ -174,7 +237,7 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
                                 style: TextStyle(
                                     color: response?.status.isSuccessful() == true ? Colors.blue : Colors.red))
                           ]),
-                          readOnly: true,
+                          readOnly: widget.source != RequestEditorSource.breakpointResponse,
                           message: response);
                     }),
               ],
@@ -182,24 +245,26 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
   }
 
   ///发送请求
-  sendRequest() async {
+  Future<void> sendRequest() async {
     var currentState = requestLineKey.currentState!;
+    // 先取 body：multipart 构建时会把带 boundary 的 Content-Type 写回 header 行
+    var bodyBytes = requestKey.currentState?.getBodyBytes();
     var headers = requestKey.currentState?.getHeaders();
-    var requestBody = requestKey.currentState?.getBody();
-    String url = currentState.requestUrl.text;
+    String url = _renderEnv(currentState.requestUrl.text);
+    _renderHeadersInPlace(headers);
 
-    HttpRequest request = HttpRequest(HttpMethod.valueOf(currentState.requestMethod), Uri.parse(url).toString(),
+    HttpRequest request = HttpRequest(currentState.requestMethod, Uri.parse(url).toString(),
         protocolVersion: this.request?.protocolVersion ?? "HTTP/1.1");
 
     request.headers.addAll(headers);
-    request.body = requestBody == null ? null : utf8.encode(requestBody);
+    request.body = bodyBytes;
 
     var proxyInfo = widget.proxyServer?.isRunning == true ? ProxyInfo.of("127.0.0.1", widget.proxyServer?.port) : null;
 
     responseKey.currentState?.change(null);
     responseChange.value = 0;
 
-    HttpClients.proxyRequest(proxyInfo: proxyInfo, request, timeout: Duration(seconds: 15)).then((response) {
+    HttpClients.proxyRequest(proxyInfo: proxyInfo, request, timeout: Duration(seconds: 30)).then((response) {
       this.response = response;
       this.response?.request = request;
       responseKey.currentState?.change(response);
@@ -213,6 +278,47 @@ class RequestEditorState extends State<MobileRequestEditor> with SingleTickerPro
 
     tabController.animateTo(1);
   }
+
+  void executeBreakpoint() {
+    executed = true;
+    if (widget.source == RequestEditorSource.breakpointRequest) {
+      var currentState = requestLineKey.currentState!;
+      var bodyBytes = requestKey.currentState?.getBodyBytes();
+      var headers = requestKey.currentState?.getHeaders();
+      String url = _renderEnv(currentState.requestUrl.text);
+      _renderHeadersInPlace(headers);
+
+      HttpRequest newRequest = request!.copy(uri: url);
+      newRequest.method = currentState.requestMethod;
+      newRequest.headers.clear();
+      newRequest.headers.addAll(headers);
+      newRequest.body = bodyBytes;
+      widget.onExecuteRequest?.call(newRequest);
+    } else if (widget.source == RequestEditorSource.breakpointResponse) {
+      var bodyBytes = responseKey.currentState?.getBodyBytes();
+      var headers = responseKey.currentState?.getHeaders();
+      _renderHeadersInPlace(headers);
+
+      if (response == null) return;
+      HttpResponse newResponse = response!.copy();
+      newResponse.headers.clear();
+      newResponse.headers.addAll(headers);
+      newResponse.body = bodyBytes;
+      widget.onExecuteResponse?.call(newResponse);
+    }
+  }
+
+  /// 用当前激活的环境变量渲染 `{{name}}`。EnvironmentManager 未加载或未启用时返回原值。
+  static String _renderEnv(String input) => EnvironmentManager.tryRender(input) ?? input;
+
+  /// 就地渲染 headers 每一项的 value。
+  static void _renderHeadersInPlace(HttpHeaders? headers) {
+    headers?.forEach((_, values) {
+      for (int i = 0; i < values.length; i++) {
+        values[i] = _renderEnv(values[i]);
+      }
+    });
+  }
 }
 
 typedef ParamCallback = void Function(String param);
@@ -221,13 +327,13 @@ class UrlQueryNotifier {
   ParamCallback? _urlNotifier;
   ParamCallback? _paramNotifier;
 
-  urlListener(ParamCallback listener) => _urlNotifier = listener;
+  ParamCallback urlListener(ParamCallback listener) => _urlNotifier = listener;
 
-  paramListener(ParamCallback listener) => _paramNotifier = listener;
+  ParamCallback paramListener(ParamCallback listener) => _paramNotifier = listener;
 
-  onUrlChange(String url) => _urlNotifier?.call(url);
+  void onUrlChange(String url) => _urlNotifier?.call(url);
 
-  onParamChange(String param) => _paramNotifier?.call(param);
+  void onParamChange(String param) => _paramNotifier?.call(param);
 }
 
 class _HttpWidget extends StatefulWidget {
@@ -244,26 +350,102 @@ class _HttpWidget extends StatefulWidget {
   }
 }
 
-class _HttpState extends State<_HttpWidget> with AutomaticKeepAliveClientMixin {
+/// 请求 Body 编辑器的数据类型选项。
+/// - NONE 表示请求不带 body（编辑器隐藏，发送时 body=null，并删除 Content-Type 头）。
+/// - RAW 表示无高亮且不修改 Content-Type；
+/// - 其余项对应一个 [ContentType]，用户手动切换时会写入 Content-Type 请求头。
+enum _BodyLanguage {
+  none,
+  raw,
+  text,
+  json,
+  xml,
+  formUrl,
+  formData,
+}
+
+class _HttpState extends State<_HttpWidget> with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  /// 数据类型下拉显示的标签
+  static const Map<_BodyLanguage, String> _bodyLanguageLabels = {
+    _BodyLanguage.none: 'NONE',
+    _BodyLanguage.raw: 'RAW',
+    _BodyLanguage.text: 'TEXT',
+    _BodyLanguage.json: 'JSON',
+    _BodyLanguage.xml: 'XML',
+    _BodyLanguage.formUrl: 'FORM-URL',
+    _BodyLanguage.formData: 'FORM-DATA',
+  };
+
+  /// _BodyLanguage 与 ContentType 的对应关系；RAW/NONE 没有对应项
+  static const Map<_BodyLanguage, ContentType> _bodyLanguageToContentType = {
+    _BodyLanguage.text: ContentType.text,
+    _BodyLanguage.json: ContentType.json,
+    _BodyLanguage.xml: ContentType.xml,
+    _BodyLanguage.formUrl: ContentType.formUrl,
+    _BodyLanguage.formData: ContentType.formData,
+  };
+
+  /// 用户手动切换数据类型时，写入 Content-Type 请求头使用的 MIME。
+  static const Map<_BodyLanguage, String> _bodyLanguageMime = {
+    _BodyLanguage.text: 'text/plain',
+    _BodyLanguage.json: 'application/json',
+    _BodyLanguage.xml: 'application/xml',
+    _BodyLanguage.formUrl: 'application/x-www-form-urlencoded',
+    _BodyLanguage.formData: 'multipart/form-data',
+  };
+
   final headerKey = GlobalKey<KeyValState>();
   Map<String, List<String>> initHeader = {};
   HttpMessage? message;
-  String? body;
+  CodeForgeController? body;
+
+  /// FORM-DATA / FORM-URL 表单数据与 multipart boundary
+  FormBody formData = FormBody();
+  String _boundary = Multipart.newBoundary();
+  final formEditorKey = GlobalKey<FormBodyEditorState>();
+
+  /// 内层 Tab 控制器：Params(请求才有) / Headers / Body
+  TabController? _innerTab;
+
+  /// 当前编辑器使用的语言；初始化时按 Content-Type 推导
+  _BodyLanguage _bodyLanguage = _BodyLanguage.none;
+  bool _bodyWrap = true;
 
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
   @override
   bool get wantKeepAlive => true;
 
-  String? getBody() {
-    return body;
+  /// 是否显示 URL Params 子 tab：仅请求消息且外层传了 query notifier 时
+  bool get _hasParamsTab => widget.urlQueryNotifier != null;
+
+  /// 可直接发送的 body 字节；NONE 返回 null。
+  /// multipart 文本值在此渲染环境变量，同时把带 boundary 的 Content-Type 写回 header 行；
+  /// 其余类型也在此渲染环境变量，调用方不再转换 body。
+  List<int>? getBodyBytes() {
+    switch (_bodyLanguage) {
+      case _BodyLanguage.none:
+        return null;
+      case _BodyLanguage.formUrl:
+        return FormUrl.buildBytes(formData);
+      case _BodyLanguage.formData:
+        headerKey.currentState
+            ?.setParam('Content-Type', 'multipart/form-data; boundary=$_boundary');
+        return Multipart.buildBytes(formData, boundary: _boundary);
+      default:
+        final text = body?.text ?? '';
+        return utf8.encode(EnvironmentManager.tryRender(text) ?? text);
+    }
   }
 
   @override
   void initState() {
     super.initState();
     message = widget.message;
-    body = widget.message?.bodyAsString;
+    body = CodeForgeController()..text = widget.message?.bodyAsString ?? '';
+    _bodyLanguage = _resolveLanguage(widget.message);
+    _loadFormData(widget.message);
+    _innerTab = TabController(length: _hasParamsTab ? 3 : 2, vsync: this, initialIndex: _hasParamsTab ? 1 : 0);
     if (widget.message?.headers == null && !widget.readOnly) {
       initHeader["User-Agent"] = ["ProxyPin/${AppConfiguration.version}"];
       initHeader["Accept"] = ["*/*"];
@@ -271,15 +453,67 @@ class _HttpState extends State<_HttpWidget> with AutomaticKeepAliveClientMixin {
     }
   }
 
-  change(HttpMessage? message) {
+  @override
+  void dispose() {
+    body?.dispose();
+    _innerTab?.dispose();
+    super.dispose();
+  }
+
+  void change(HttpMessage? message) {
     this.message = message;
-    body = message?.bodyAsString;
+    body?.text = message?.bodyAsString ?? '';
+    _bodyLanguage = _resolveLanguage(message);
+    _loadFormData(message);
     headerKey.currentState?.refreshParam(message?.headers.getHeaders());
     setState(() {});
   }
 
+  /// form-url / multipart 请求：解析已有 body 回填表单（multipart 保留原 boundary）；否则重置
+  void _loadFormData(HttpMessage? msg) {
+    final ct = msg?.headers.contentType.toLowerCase() ?? '';
+    final msgBody = msg?.body;
+    if (msgBody != null && msgBody.isNotEmpty) {
+      if (ct.contains('multipart/form-data')) {
+        formData = Multipart.parse(msgBody, ct);
+        _boundary = Multipart.boundaryFromContentType(ct) ?? Multipart.newBoundary();
+        return;
+      }
+      if (ct.contains('application/x-www-form-urlencoded')) {
+        formData = FormUrl.parse(msgBody);
+        return;
+      }
+    }
+    formData = FormBody();
+    _boundary = Multipart.newBoundary();
+  }
+
   HttpHeaders? getHeaders() {
     return HttpHeaders.fromJson(headerKey.currentState?.getParams() ?? {});
+  }
+
+  /// 根据消息推断编辑器初始语言；初始化推断不会回写 header。
+  /// - body 为空且方法是 GET/HEAD/DELETE/OPTIONS 或没有 Content-Type 头 → NONE
+  /// - 其他情况按 Content-Type 头匹配，匹配不到归 TEXT
+  _BodyLanguage _resolveLanguage(HttpMessage? message) {
+    if (message == null) return _BodyLanguage.none;
+
+    final bodyEmpty = message.bodyAsString.isEmpty;
+    final hasContentType = message.headers.contentType.isNotEmpty;
+    if (bodyEmpty && message is HttpRequest) {
+      const noBodyMethods = {HttpMethod.get, HttpMethod.head, HttpMethod.delete, HttpMethod.options};
+      if (noBodyMethods.contains(message.method) || !hasContentType) {
+        return _BodyLanguage.none;
+      }
+    } else if (bodyEmpty && !hasContentType) {
+      return _BodyLanguage.none;
+    }
+
+    final ct = message.contentType;
+    for (final entry in _bodyLanguageToContentType.entries) {
+      if (entry.value == ct) return entry.key;
+    }
+    return _BodyLanguage.json;
   }
 
   @override
@@ -290,41 +524,276 @@ class _HttpState extends State<_HttpWidget> with AutomaticKeepAliveClientMixin {
       return Center(child: Text(localizations.emptyData));
     }
 
-    return SingleChildScrollView(
-        padding: const EdgeInsets.all(15),
+    final theme = Theme.of(context);
+
+    final paramsTab = _hasParamsTab
+        ? KeyValWidget(
+            title: 'URL${localizations.param}',
+            paramNotifier: widget.urlQueryNotifier,
+            params: message is HttpRequest ? (message as HttpRequest).requestUri?.queryParametersAll : null,
+            showTitle: false,
+          )
+        : null;
+
+    final headersTab = KeyValWidget(
+      title: "Headers",
+      params: message?.headers.getHeaders() ?? initHeader,
+      key: headerKey,
+      suggestions: HttpHeaders.commonHeaderKeys,
+      readOnly: widget.readOnly,
+      showTitle: false,
+    );
+
+    return Padding(
+        padding: const EdgeInsets.fromLTRB(15, 10, 15, 10),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           widget.title,
-          if (widget.urlQueryNotifier != null)
-            KeyValWidget(
-              title: 'URL${localizations.param}',
-              paramNotifier: widget.urlQueryNotifier,
-              params: message is HttpRequest ? (message as HttpRequest).requestUri?.queryParametersAll : null,
-              expanded: false,
+          const SizedBox(height: 8),
+          TabBar(
+            controller: _innerTab,
+            isScrollable: false,
+            labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            unselectedLabelStyle: const TextStyle(fontSize: 13),
+            labelColor: theme.colorScheme.primary,
+            indicatorSize: TabBarIndicatorSize.label,
+            tabs: [
+              if (_hasParamsTab) Tab(text: 'Params', height: 36),
+              const Tab(text: 'Headers', height: 36),
+              const Tab(text: 'Body', height: 36),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // 这里用 IndexedStack 而非 TabBarView：
+          // TabBarView 是惰性构建的，没访问过的 tab 不会 mount，
+          // 用户直接发送时 headerKey.currentState 会是 null，导致 header 全丢。
+          // IndexedStack 同时挂载所有子树（只显示一个），保证 GlobalKey 始终可达。
+          Expanded(
+            child: AnimatedBuilder(
+              animation: _innerTab!,
+              builder: (_, __) => IndexedStack(
+                index: _innerTab!.index,
+                children: [
+                  if (paramsTab != null) SingleChildScrollView(child: paramsTab),
+                  SingleChildScrollView(child: headersTab),
+                  _body(),
+                ],
+              ),
             ),
-          KeyValWidget(
-              title: "Headers",
-              params: message?.headers.getHeaders() ?? initHeader,
-              key: headerKey,
-              readOnly: widget.readOnly),
-          // 请求头
-          const SizedBox(height: 10),
-          const Text("Body", style: TextStyle(fontWeight: FontWeight.w500, color: Colors.blue)),
-          _body(),
-          const SizedBox(height: 10),
+          ),
         ]));
   }
 
   Widget _body() {
     if (widget.readOnly) {
-      return SingleChildScrollView(child: HttpBodyWidget(httpMessage: message));
+      return KeepAliveWrapper(child: SingleChildScrollView(child: HttpBodyWidget(httpMessage: message)));
     }
 
-    return TextField(
-        controller: TextEditingController(text: body),
-        readOnly: widget.readOnly,
-        onChanged: (value) => body = value,
-        minLines: 3,
-        maxLines: 15);
+    if (_bodyLanguage == _BodyLanguage.formData || _bodyLanguage == _BodyLanguage.formUrl) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _bodyToolbar(),
+        const SizedBox(height: 4),
+        Expanded(child: FormBodyEditor(
+          key: formEditorKey,
+          form: formData,
+          allowFiles: _bodyLanguage == _BodyLanguage.formData,
+        )),
+      ]);
+    }
+
+    final isCN = localizations.localeName == 'zh';
+    final isNone = _bodyLanguage == _BodyLanguage.none;
+    final ct = _bodyLanguageToContentType[_bodyLanguage];
+    final language = ct == null ? null : HighlightLanguages.getLanguage(ct);
+    final isDark = Theme.brightnessOf(context) == Brightness.dark;
+    final baseTheme = isDark ? atomOneDarkTheme : atomOneLightTheme;
+    final pageBg = Theme.of(context).colorScheme.surface;
+    final editorTheme = isDark
+        ? {
+            ...baseTheme,
+            'root': const TextStyle(color: Color(0xffabb2bf)).copyWith(backgroundColor: pageBg),
+          }
+        : baseTheme;
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _bodyToolbar(),
+      const SizedBox(height: 4),
+      Expanded(
+        child: isNone
+            ? Center(
+                child: Text(
+                  isCN ? '此请求无消息体' : 'This request has no body',
+                  style: TextStyle(color: Theme.of(context).hintColor),
+                ),
+              )
+            : Container(
+                decoration: BoxDecoration(border: Border.all(color: Colors.black12)),
+                child: CodeForge(
+                  // CodeForge 把 language 当作 late final 在 initState 里固定，
+                  // 切换数据类型/换行后必须靠新的 key 重建组件才能生效；
+                  // controller 由本 State 持有，重建不会丢文本。
+                  key: ValueKey('body-editor-${_bodyLanguage.name}-$_bodyWrap'),
+                  controller: body!,
+                  lineWrap: _bodyWrap,
+                  language: language,
+                  enableGuideLines: false,
+                  selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
+                  editorTheme: editorTheme,
+                  textStyle: const TextStyle(fontSize: 13),
+                  finderBuilder: (c, controller) => FindPanelView(controller: controller),
+                ),
+              ),
+      ),
+    ]);
+  }
+
+  Widget _bodyToolbar() {
+    final isCN = localizations.localeName == 'zh';
+    final color = Theme.of(context).colorScheme.primary;
+    // 窄屏（小屏手机）按钮只显示图标，避免工具栏溢出
+    final narrow = MediaQuery.of(context).size.width < 380;
+    // NONE 无 body；FORM-DATA/FORM-URL 由表单构建器管理，纯文本工具均不适用
+    final textToolsDisabled = _bodyLanguage == _BodyLanguage.none ||
+        _bodyLanguage == _BodyLanguage.formData ||
+        _bodyLanguage == _BodyLanguage.formUrl;
+
+    return SizedBox(
+        height: 36,
+        child: Row(children: [
+          Text(isCN ? '数据类型' : 'Type', style: const TextStyle(fontSize: 12)),
+          const SizedBox(width: 6),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<_BodyLanguage>(
+              value: _bodyLanguage,
+              isDense: true,
+              icon: const Icon(Icons.arrow_drop_down, size: 18),
+              items: _BodyLanguage.values
+                  .map((e) => DropdownMenuItem(
+                      value: e,
+                      child: Text(_bodyLanguageLabels[e] ?? e.name.toUpperCase(),
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500))))
+                  .toList(),
+              onChanged: (val) {
+                if (val == null || val == _bodyLanguage) return;
+                setState(() => _bodyLanguage = val);
+                _syncContentTypeHeader(val);
+              },
+            ),
+          ),
+          // FORM-DATA/FORM-URL：添加入口放工具栏（添加文本；multipart 另有选择文件）
+          if (_bodyLanguage == _BodyLanguage.formData || _bodyLanguage == _BodyLanguage.formUrl) ...[
+            const Spacer(),
+            // 中文"添加文本"不空格，英文"Add Text"需空格
+            () {
+              final addTextLabel = isCN ? '${localizations.add}${localizations.text}'
+                  : '${localizations.add} ${localizations.text}';
+              return narrow
+                  ? IconButton(
+                      onPressed: () => formEditorKey.currentState?.addTextField(),
+                      tooltip: addTextLabel,
+                      iconSize: 18,
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.text_fields),
+                    )
+                  : TextButton.icon(
+                      onPressed: () => formEditorKey.currentState?.addTextField(),
+                      icon: const Icon(Icons.text_fields, size: 16),
+                      label: Text(addTextLabel, style: const TextStyle(fontSize: 12.5)),
+                    );
+            }(),
+            if (_bodyLanguage == _BodyLanguage.formData)
+              narrow
+                  ? IconButton(
+                      onPressed: () => formEditorKey.currentState?.addFiles(),
+                      tooltip: localizations.selectFile,
+                      iconSize: 18,
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.upload_file),
+                    )
+                  : TextButton.icon(
+                      onPressed: () => formEditorKey.currentState?.addFiles(),
+                      icon: const Icon(Icons.upload_file, size: 16),
+                      label: Text(localizations.selectFile, style: const TextStyle(fontSize: 12.5)),
+                    ),
+          ],
+          // 其他文本类型：换行/美化/复制
+          if (!textToolsDisabled) ...[
+            const Spacer(),
+            IconButton(
+              tooltip: localizations.wordWrap,
+              iconSize: 18,
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.wrap_text, color: _bodyWrap ? color : null),
+              onPressed: () => setState(() => _bodyWrap = !_bodyWrap),
+            ),
+            IconButton(
+              tooltip: localizations.format,
+              iconSize: 18,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.auto_fix_high),
+              onPressed: _beautifyBody,
+            ),
+            IconButton(
+              tooltip: localizations.copy,
+              iconSize: 18,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.copy),
+              onPressed: () {
+                final text = body?.text ?? '';
+                if (text.isEmpty) return;
+                Clipboard.setData(ClipboardData(text: text));
+                FlutterToastr.show(localizations.copied, context);
+              },
+            ),
+          ],
+        ]));
+  }
+
+  /// 用户主动切换数据类型时，把 Content-Type 请求头改成对应 MIME。
+  /// - NONE：删除 Content-Type；body 不发。
+  /// - RAW：保持原 header 不动。
+  /// - 其他：写入对应 MIME。
+  void _syncContentTypeHeader(_BodyLanguage lang) {
+    if (lang == _BodyLanguage.raw) return;
+    final headerState = headerKey.currentState;
+    if (headerState == null) return;
+
+    // FORM-DATA 需要带上 boundary 才是合法的 Content-Type
+    if (lang == _BodyLanguage.formData) {
+      headerState.setParam('Content-Type', 'multipart/form-data; boundary=$_boundary');
+      return;
+    }
+
+    if (lang == _BodyLanguage.none) {
+      headerState.removeParam('Content-Type');
+      return;
+    }
+
+    String mime = _bodyLanguageMime[lang] ?? 'text/plain';
+    headerState.setParam('Content-Type', mime);
+  }
+
+  /// 根据当前数据类型对 body 文本做格式化
+  void _beautifyBody() {
+    final controller = body;
+    if (controller == null) return;
+    final text = controller.text;
+    if (text.isEmpty) return;
+    String formatted;
+    switch (_bodyLanguage) {
+      case _BodyLanguage.json:
+        formatted = JSON.pretty(text);
+        break;
+      case _BodyLanguage.xml:
+        formatted = XML.pretty(text);
+        break;
+      default:
+        FlutterToastr.show(
+            localizations.localeName == 'zh' ? '当前数据类型不支持美化' : 'Beautify is not supported for this type', context);
+        return;
+    }
+    if (formatted != text) {
+      controller.text = formatted;
+    }
   }
 }
 
@@ -341,8 +810,8 @@ class _RequestLine extends StatefulWidget {
 }
 
 class _RequestLineState extends State<_RequestLine> {
-  TextEditingController requestUrl = TextEditingController(text: "");
-  String requestMethod = HttpMethod.get.name;
+  EnvHighlightTextEditingController requestUrl = EnvHighlightTextEditingController(text: "");
+  HttpMethod requestMethod = HttpMethod.get;
 
   @override
   void initState() {
@@ -354,7 +823,7 @@ class _RequestLineState extends State<_RequestLine> {
     }
     var request = widget.request!;
     requestUrl.text = request.requestUrl;
-    requestMethod = request.method.name;
+    requestMethod = request.method;
   }
 
   @override
@@ -363,19 +832,19 @@ class _RequestLineState extends State<_RequestLine> {
     super.dispose();
   }
 
-  change(String? requestUrl, String? requestMethod) {
+  void change(String? requestUrl, HttpMethod? requestMethod) {
     this.requestUrl.text = requestUrl ?? this.requestUrl.text;
     this.requestMethod = requestMethod ?? this.requestMethod;
 
     urlNotifier();
   }
 
-  urlNotifier() {
+  void urlNotifier() {
     var splitFirst = requestUrl.text.splitFirst("?".codeUnits.first);
     widget.urlQueryNotifier?.onUrlChange(splitFirst.length > 1 ? splitFirst.last : '');
   }
 
-  onQueryChange(String query) {
+  void onQueryChange(String query) {
     var url = requestUrl.text;
     var indexOf = url.indexOf("?");
     if (indexOf == -1) {
@@ -392,23 +861,19 @@ class _RequestLineState extends State<_RequestLine> {
     return TextField(
         style: const TextStyle(fontSize: 14),
         minLines: 1,
-        maxLines: 5,
+        maxLines: 3,
         autofocus: false,
         controller: requestUrl,
         decoration: InputDecoration(
-            prefix: DropdownButton(
-              padding: const EdgeInsets.only(right: 10),
-              underline: const SizedBox(),
-              isDense: true,
-              focusColor: Colors.transparent,
-              value: requestMethod,
-              items: HttpMethod.methods()
-                  .map((it) =>
-                      DropdownMenuItem(value: it.name, child: Text(it.name, style: const TextStyle(fontSize: 12))))
-                  .toList(),
-              onChanged: (String? value) {
-                setState(() => requestMethod = value!);
-              },
+            prefixIcon: Padding(
+              padding: const EdgeInsets.only(left: 6, right: 6),
+              child: MethodPopupMenu(
+                value: requestMethod,
+                showSeparator: true,
+                onChanged: (val) {
+                  setState(() => requestMethod = val!);
+                },
+              ),
             ),
             isDense: true,
             border: const OutlineInputBorder(borderSide: BorderSide()),
@@ -434,9 +899,21 @@ class KeyValWidget extends StatefulWidget {
   final bool readOnly; //只读
   final UrlQueryNotifier? paramNotifier;
   final bool expanded;
+  final List<String>? suggestions;
+
+  /// 是否使用 ExpansionTile 包裹自带标题；
+  /// 内层 Tab 模式下 tab 已经标了名字，传 false 直接渲染列表更干净。
+  final bool showTitle;
 
   const KeyValWidget(
-      {super.key, this.params, this.readOnly = false, this.paramNotifier, required this.title, this.expanded = true});
+      {super.key,
+      this.params,
+      this.readOnly = false,
+      this.paramNotifier,
+      required this.title,
+      this.expanded = true,
+      this.suggestions,
+      this.showTitle = true});
 
   @override
   State<StatefulWidget> createState() {
@@ -446,10 +923,13 @@ class KeyValWidget extends StatefulWidget {
 
 final Map<String, bool> _expanded = {};
 
-class KeyValState extends State<KeyValWidget> {
+class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin {
   final List<KeyVal> _params = [];
 
   AppLocalizations get localizations => AppLocalizations.of(context)!;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -465,7 +945,7 @@ class KeyValState extends State<KeyValWidget> {
   }
 
   //监听url发生变化 更改表单
-  onChange(String value) {
+  void onChange(String value) {
     var query = value.split("&");
     int index = 0;
     while (index < query.length) {
@@ -486,7 +966,7 @@ class KeyValState extends State<KeyValWidget> {
     setState(() {});
   }
 
-  notifierChange() {
+  void notifierChange() {
     if (widget.paramNotifier == null) return;
     String query = _params
         .where((e) => e.enabled && e.key.isNotEmpty)
@@ -509,8 +989,15 @@ class KeyValState extends State<KeyValWidget> {
     return map;
   }
 
+  Future<void> _copyParam(KeyVal keyVal) async {
+    final text = '${keyVal.key}: ${keyVal.value}';
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    FlutterToastr.show(localizations.copied, context);
+  }
+
   //刷新param
-  refreshParam(Map<String, List<String>>? headers) {
+  void refreshParam(Map<String, List<String>>? headers) {
     _params.clear();
     setState(() {
       headers?.forEach((name, values) {
@@ -521,28 +1008,63 @@ class KeyValState extends State<KeyValWidget> {
     });
   }
 
+  /// 设置或更新单条 header（不区分大小写匹配 key）。已存在则原地改 value，不存在则追加。
+  void setParam(String name, String value) {
+    KeyVal? matched;
+    for (var kv in _params) {
+      if (kv.key.toLowerCase() == name.toLowerCase()) {
+        matched = kv;
+        break;
+      }
+    }
+    setState(() {
+      if (matched != null) {
+        matched.enabled = true;
+        matched.key = name;
+        matched.value = value;
+      } else {
+        _params.add(KeyVal(name, value));
+      }
+    });
+    notifierChange();
+  }
+
+  /// 删除指定 header（不区分大小写匹配 key）。
+  void removeParam(String name) {
+    final before = _params.length;
+    setState(() => _params.removeWhere((kv) => kv.key.toLowerCase() == name.toLowerCase()));
+    if (_params.length != before) notifierChange();
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    final addBtn = widget.readOnly
+        ? const SizedBox()
+        : Container(
+            alignment: Alignment.center,
+            child: TextButton(
+                onPressed: () {
+                  var keyVal = KeyVal("", "");
+                  _params.add(keyVal);
+                  modifyParam(keyVal);
+                },
+                child: Text(localizations.add, textAlign: TextAlign.center))); //添加按钮
+
+    if (!widget.showTitle) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [..._buildRows(), addBtn],
+      );
+    }
+
     return ExpansionTile(
       title: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.blue)),
       tilePadding: const EdgeInsets.only(left: 0, top: 10, bottom: 10),
       initiallyExpanded: _expanded[widget.title] ?? widget.expanded,
       onExpansionChanged: (value) => _expanded[widget.title] = value,
       shape: const Border(),
-      children: [
-        ..._buildRows(),
-        widget.readOnly
-            ? const SizedBox()
-            : Container(
-                alignment: Alignment.center,
-                child: TextButton(
-                    onPressed: () {
-                      var keyVal = KeyVal("", "");
-                      _params.add(keyVal);
-                      modifyParam(keyVal);
-                    },
-                    child: Text(localizations.add, textAlign: TextAlign.center))) //添加按钮
-      ],
+      children: [..._buildRows(), addBtn],
     );
   }
 
@@ -551,10 +1073,11 @@ class KeyValState extends State<KeyValWidget> {
 
     for (var element in _params) {
       Widget headerWidget = Padding(padding: const EdgeInsets.only(top: 5, bottom: 5), child: row(element));
-      if (!widget.readOnly) {
-        headerWidget =
-            InkWell(onTap: () => modifyParam(element), onLongPress: () => deleteHeader(element), child: headerWidget);
-      }
+      headerWidget = InkWell(
+        onTap: () => modifyParam(element),
+        onLongPress: widget.readOnly ? () => _copyParam(element) : () => deleteHeader(element),
+        child: headerWidget,
+      );
 
       list.add(headerWidget);
       list.add(const Divider(thickness: 0.2));
@@ -572,7 +1095,7 @@ class KeyValState extends State<KeyValWidget> {
   }
 
   /// 修改请求头
-  modifyParam(KeyVal keyVal) {
+  void modifyParam(KeyVal keyVal) {
     //隐藏输入框焦点
     hideKeyword(context);
     String headerName = keyVal.key;
@@ -580,47 +1103,175 @@ class KeyValState extends State<KeyValWidget> {
     showDialog(
         context: context,
         builder: (ctx) {
-          return AlertDialog(
-            titlePadding: const EdgeInsets.only(left: 25, top: 10),
-            actionsPadding: const EdgeInsets.only(right: 10, bottom: 10),
-            title: Text(localizations.modifyRequestHeader, style: const TextStyle(fontSize: 18)),
-            content: Wrap(
-              children: [
-                TextFormField(
-                  minLines: 1,
-                  maxLines: 3,
-                  initialValue: headerName,
-                  decoration: InputDecoration(labelText: localizations.headerName),
-                  onChanged: (value) => headerName = value,
-                ),
-                TextFormField(
-                  minLines: 1,
-                  maxLines: 8,
-                  initialValue: val,
-                  decoration: InputDecoration(labelText: localizations.value),
-                  onChanged: (value) => val = value,
-                )
+          return StatefulBuilder(builder: (context, setState) {
+            return AlertDialog(
+              titlePadding: const EdgeInsets.only(left: 25, top: 10),
+              actionsPadding: const EdgeInsets.only(right: 10, bottom: 10),
+              title: Text(widget.readOnly ? localizations.responseHeader : localizations.modifyRequestHeader,
+                  style: const TextStyle(fontSize: 16)),
+              content: Wrap(
+                children: [
+                  if (widget.suggestions != null && !widget.readOnly)
+                    Autocomplete<String>(
+                      optionsBuilder: (TextEditingValue textEditingValue) {
+                        if (textEditingValue.text.isEmpty) {
+                          return const Iterable<String>.empty();
+                        }
+                        return widget.suggestions!.where((String option) {
+                          return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                        });
+                      },
+                      onSelected: (String selection) {
+                        setState(() {
+                          headerName = selection;
+                        });
+                      },
+                      fieldViewBuilder: (BuildContext context, TextEditingController textEditingController,
+                          FocusNode focusNode, VoidCallback onFieldSubmitted) {
+                        return TextFormField(
+                          controller: textEditingController,
+                          focusNode: focusNode,
+                          minLines: 1,
+                          maxLines: 3,
+                          decoration: InputDecoration(labelText: localizations.headerName),
+                          onChanged: (value) {
+                            headerName = value;
+                            setState(() {});
+                          },
+                        );
+                      },
+                      initialValue: TextEditingValue(text: headerName),
+                      optionsViewBuilder:
+                          (BuildContext context, AutocompleteOnSelected<String> onSelected, Iterable<String> options) {
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            elevation: 4.0,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 200, maxWidth: 300),
+                              child: ListView.builder(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                itemCount: options.length,
+                                itemBuilder: (BuildContext context, int index) {
+                                  final String option = options.elementAt(index);
+                                  return InkWell(
+                                    onTap: () {
+                                      onSelected(option);
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(10.0),
+                                      child: _buildHighlightText(option, headerName),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  else
+                    TextFormField(
+                      minLines: 1,
+                      maxLines: 3,
+                      initialValue: headerName,
+                      readOnly: widget.readOnly,
+                      decoration: InputDecoration(labelText: localizations.headerName),
+                      onChanged: (value) {
+                        headerName = value;
+                        setState(() {});
+                      },
+                    ),
+                  if (HttpHeaders.commonHeaderValues.containsKey(headerName) && !widget.readOnly)
+                    Autocomplete<String>(
+                      optionsBuilder: (TextEditingValue textEditingValue) {
+                        if (textEditingValue.text.isEmpty) {
+                          return const Iterable<String>.empty();
+                        }
+                        return HttpHeaders.commonHeaderValues[headerName]!.where((String option) {
+                          return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                        });
+                      },
+                      onSelected: (String selection) {
+                        val = selection;
+                      },
+                      fieldViewBuilder: (BuildContext context, TextEditingController textEditingController,
+                          FocusNode focusNode, VoidCallback onFieldSubmitted) {
+                        return TextFormField(
+                          controller: textEditingController,
+                          focusNode: focusNode,
+                          minLines: 1,
+                          maxLines: 8,
+                          decoration: InputDecoration(labelText: localizations.value),
+                          onChanged: (value) => val = value,
+                        );
+                      },
+                      initialValue: TextEditingValue(text: val),
+                      optionsViewBuilder:
+                          (BuildContext context, AutocompleteOnSelected<String> onSelected, Iterable<String> options) {
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            elevation: 4.0,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 200, maxWidth: 300),
+                              child: ListView.builder(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                itemCount: options.length,
+                                itemBuilder: (BuildContext context, int index) {
+                                  final String option = options.elementAt(index);
+                                  return InkWell(
+                                    onTap: () {
+                                      onSelected(option);
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(10.0),
+                                      child: _buildHighlightText(option, val),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  else
+                    TextFormField(
+                      minLines: 1,
+                      maxLines: 8,
+                      initialValue: val,
+                      readOnly: widget.readOnly,
+                      decoration: InputDecoration(labelText: localizations.value),
+                      onChanged: (value) => val = value,
+                    )
+                ],
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text(widget.readOnly ? localizations.close : localizations.cancel)),
+                if (!widget.readOnly)
+                  TextButton(
+                      onPressed: () {
+                        this.setState(() {
+                          keyVal.key = headerName;
+                          keyVal.value = val;
+                        });
+                        notifierChange();
+                        Navigator.pop(ctx);
+                      },
+                      child: Text(localizations.modify)),
               ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: Text(localizations.cancel)),
-              TextButton(
-                  onPressed: () {
-                    setState(() {
-                      keyVal.key = headerName;
-                      keyVal.value = val;
-                    });
-                    notifierChange();
-                    Navigator.pop(ctx);
-                  },
-                  child: Text(localizations.modify)),
-            ],
-          );
+            );
+          });
         });
   }
 
   //删除
-  deleteHeader(KeyVal keyVal) {
+  void deleteHeader(KeyVal keyVal) {
     showDialog(
         context: context,
         builder: (ctx) {
@@ -656,8 +1307,28 @@ class KeyValState extends State<KeyValWidget> {
       const SizedBox(width: 8),
       Expanded(
         flex: 6,
-        child: Text(keyVal.value, style: const TextStyle(fontSize: 13), maxLines: 5, overflow: TextOverflow.ellipsis),
+        child: buildEnvHighlightText(context, keyVal.value,
+            style: const TextStyle(fontSize: 13), maxLines: 5, overflow: TextOverflow.ellipsis),
       ),
     ]);
+  }
+
+  Widget _buildHighlightText(String text, String query) {
+    if (query.isEmpty) {
+      return Text(text);
+    }
+
+    int index = text.toLowerCase().indexOf(query.toLowerCase());
+    if (index < 0) {
+      return Text(text);
+    }
+
+    return Text.rich(TextSpan(children: [
+      TextSpan(text: text.substring(0, index)),
+      TextSpan(
+          text: text.substring(index, index + query.length),
+          style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+      TextSpan(text: text.substring(index + query.length))
+    ]));
   }
 }

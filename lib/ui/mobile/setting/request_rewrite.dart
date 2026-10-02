@@ -33,6 +33,7 @@ import 'package:proxypin/utils/platform.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../component/http_method_popup.dart';
 import 'rewrite/rewrite_replace.dart';
 
 class MobileRequestRewrite extends StatefulWidget {
@@ -45,24 +46,11 @@ class MobileRequestRewrite extends StatefulWidget {
 }
 
 class _MobileRequestRewriteState extends State<MobileRequestRewrite> {
-  bool enabled = false;
-
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
   @override
   void initState() {
     super.initState();
-    enabled = widget.requestRewrites.enabled;
-  }
-
-  @override
-  void dispose() {
-    if (enabled != widget.requestRewrites.enabled) {
-      widget.requestRewrites.enabled = enabled;
-      widget.requestRewrites.flushRequestRewriteConfig();
-    }
-
-    super.dispose();
   }
 
   @override
@@ -77,7 +65,13 @@ class _MobileRequestRewriteState extends State<MobileRequestRewrite> {
                 Row(
                   children: [
                     Text(localizations.requestRewriteEnable),
-                    SwitchWidget(value: enabled, scale: 0.8, onChanged: (val) => enabled = val),
+                    SwitchWidget(
+                        value: widget.requestRewrites.enabled,
+                        scale: 0.8,
+                        onChanged: (val) {
+                          widget.requestRewrites.enabled = val;
+                          widget.requestRewrites.flushRequestRewriteConfig();
+                        }),
                   ],
                 ),
                 Row(mainAxisAlignment: MainAxisAlignment.end, children: [
@@ -97,14 +91,13 @@ class _MobileRequestRewriteState extends State<MobileRequestRewrite> {
 
   //导入
   Future<void> import() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
-    if (result == null || result.files.isEmpty) {
+    final file = await FilePicker.pickFile(type: FileType.any);
+    if (file == null) {
       return;
     }
-    var file = result.files.single.xFile;
 
     try {
-      List json = jsonDecode(utf8.decode(await file.readAsBytes()));
+      List json = jsonDecode(utf8.decode(await file.xFile.readAsBytes()));
 
       for (var item in json) {
         var rule = RequestRewriteRule.formJson(item);
@@ -151,6 +144,9 @@ class _RequestRuleListState extends State<RequestRuleList> {
 
   bool multiple = false;
 
+  //长按菜单进入"拖动排序"后,当前可拖动的行下标;null 表示未进入,此时不劫持列表滑动
+  int? dragIndex;
+
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
   @override
@@ -171,27 +167,29 @@ class _RequestRuleListState extends State<RequestRuleList> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        persistentFooterButtons: [multiple ? globalMenu() : const SizedBox()],
+        persistentFooterButtons: multiple ? [globalMenu()] : null,
         body: Container(
             padding: const EdgeInsets.only(top: 10, bottom: 30),
-            decoration: BoxDecoration(border: Border.all(color: Colors.grey.withOpacity(0.2))),
-            child: Scrollbar(
-                child: ListView(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Container(width: 60, padding: const EdgeInsets.only(left: 10), child: Text(localizations.name)),
-                    SizedBox(width: 46, child: Text(localizations.enable, textAlign: TextAlign.center)),
-                    const VerticalDivider(),
-                    const Expanded(child: Text("URL")),
-                    SizedBox(width: 60, child: Text(localizations.action, textAlign: TextAlign.center)),
-                  ],
-                ),
-                const Divider(thickness: 0.5),
-                Column(children: rows(widget.requestRewrites.rules))
-              ],
-            ))));
+            decoration: BoxDecoration(border: Border.all(color: Colors.grey.withValues(alpha: 0.2))),
+            child: Column(children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  Container(width: 60, padding: const EdgeInsets.only(left: 10), child: Text(localizations.name)),
+                  SizedBox(width: 46, child: Text(localizations.enable, textAlign: TextAlign.center)),
+                  const VerticalDivider(),
+                  const Expanded(child: Text("URL")),
+                  SizedBox(width: 60, child: Text(localizations.action, textAlign: TextAlign.center)),
+                ],
+              ),
+              const Divider(thickness: 0.5),
+              Expanded(
+                  child: ReorderableListView.builder(
+                      buildDefaultDragHandles: false,
+                      itemCount: widget.requestRewrites.rules.length,
+                      onReorderItem: _onReorder,
+                      itemBuilder: (context, index) => _buildRow(widget.requestRewrites.rules, index)))
+            ])));
   }
 
   Stack globalMenu() {
@@ -200,7 +198,7 @@ class _RequestRuleListState extends State<RequestRuleList> {
           height: 50,
           width: double.infinity,
           margin: const EdgeInsets.only(top: 10),
-          decoration: BoxDecoration(border: Border.all(color: Colors.grey.withOpacity(0.2)))),
+          decoration: BoxDecoration(border: Border.all(color: Colors.grey.withValues(alpha: 0.2)))),
       Positioned(
           top: 0,
           left: 0,
@@ -236,59 +234,96 @@ class _RequestRuleListState extends State<RequestRuleList> {
     ]);
   }
 
-  List<Widget> rows(List<RequestRewriteRule> list) {
+  Widget _buildRow(List<RequestRewriteRule> list, int index) {
     var primaryColor = Theme.of(context).colorScheme.primary;
-    bool isEN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'en');
-    return List.generate(list.length, (index) {
-      return InkWell(
-          highlightColor: Colors.transparent,
-          splashColor: Colors.transparent,
-          hoverColor: primaryColor.withOpacity(0.3),
-          onLongPress: () => showMenus(index),
-          onTap: () async {
-            if (multiple) {
-              setState(() {
-                if (!selected.add(index)) {
-                  selected.remove(index);
-                }
-              });
-              return;
-            }
-            showEdit(index);
-          },
-          child: Container(
-              color: selected.contains(index)
-                  ? primaryColor.withOpacity(0.8)
-                  : index.isEven
-                      ? Colors.grey.withOpacity(0.1)
-                      : null,
-              height: 45,
-              padding: const EdgeInsets.all(5),
-              child: Row(
-                children: [
-                  SizedBox(
-                      width: 60,
-                      child: Text(list[index].name ?? "",
-                          overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
-                  SizedBox(
-                      width: 35,
-                      child: SwitchWidget(
-                          scale: 0.65,
-                          value: list[index].enabled,
-                          onChanged: (val) {
-                            list[index].enabled = val;
-                            changed = true;
-                          })),
-                  const SizedBox(width: 20),
-                  Expanded(child: Text(list[index].url, style: const TextStyle(fontSize: 13))),
-                  const SizedBox(width: 3),
-                  SizedBox(
-                      width: 60,
-                      child: Text(isEN ? list[index].type.name.camelCaseToSpaced() : list[index].type.label,
-                          textAlign: TextAlign.center, style: const TextStyle(fontSize: 13))),
-                ],
-              )));
+    bool isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
+    bool draggable = dragIndex == index;
+    Widget row = InkWell(
+        highlightColor: Colors.transparent,
+        splashColor: Colors.transparent,
+        hoverColor: primaryColor.withValues(alpha: 0.3),
+        onLongPress: draggable ? null : () => showMenus(index),
+        onTap: () async {
+          //拖动模式下点击任意处即退出拖动
+          if (dragIndex != null) {
+            setState(() => dragIndex = null);
+            return;
+          }
+          if (multiple) {
+            setState(() {
+              if (!selected.add(index)) {
+                selected.remove(index);
+              }
+            });
+            return;
+          }
+          showEdit(index);
+        },
+            child: Container(
+                color: selected.contains(index)
+                    ? primaryColor.withValues(alpha: 0.8)
+                    : index.isEven
+                        ? Colors.grey.withValues(alpha: 0.1)
+                        : null,
+                height: 45,
+                padding: const EdgeInsets.all(5),
+                child: Row(
+                  children: [
+                    SizedBox(
+                        width: 60,
+                        child: Text(list[index].name ?? "",
+                            overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+                    SizedBox(
+                        width: 35,
+                        child: SwitchWidget(
+                            scale: 0.65,
+                            value: list[index].enabled,
+                            onChanged: (val) {
+                              list[index].enabled = val;
+                              changed = true;
+                            })),
+                    const SizedBox(width: 20),
+                    Expanded(child: Text(list[index].url, style: const TextStyle(fontSize: 13))),
+                    const SizedBox(width: 3),
+                    SizedBox(
+                        width: 60,
+                        child: Text(!isCN ? list[index].type.name.camelCaseToSpaced() : list[index].type.label,
+                            textAlign: TextAlign.center, style: const TextStyle(fontSize: 13))),
+                  ],
+                )));
+
+    //仅在"拖动排序"模式下监听拖拽;平时整行不劫持,列表可正常上下滑动
+    if (draggable) {
+      row = ReorderableDragStartListener(index: index, child: row);
+    }
+    return KeyedSubtree(key: ValueKey<RequestRewriteRule>(list[index]), child: row);
+  }
+
+  ///拖拽排序：本地重排并持久化
+  void _onReorder(int oldIndex, int newIndex) {
+    final requestRewrites = widget.requestRewrites;
+    setState(() {
+      final rule = requestRewrites.rules.removeAt(oldIndex);
+      requestRewrites.rules.insert(newIndex, rule);
+      selected.clear();
+      dragIndex = null; //拖完退出拖动模式
     });
+    changed = true;
+  }
+
+  ///上移/下移规则：index 为当前列表下标，offset 为 ±1
+  void _moveRule(int index, int offset) {
+    final requestRewrites = widget.requestRewrites;
+    final target = index + offset;
+    if (target < 0 || target >= requestRewrites.rules.length) {
+      return;
+    }
+    setState(() {
+      final rule = requestRewrites.rules.removeAt(index);
+      requestRewrites.rules.insert(target, rule);
+      selected.clear();
+    });
+    changed = true;
   }
 
   Future<void> showEdit(int index) async {
@@ -332,6 +367,16 @@ class _RequestRuleListState extends State<RequestRuleList> {
                 onPressed: () {
                   rules[index].enabled = !rules[index].enabled;
                   changed = true;
+                }),
+            const Divider(thickness: 0.5, height: 5),
+            BottomSheetItem(text: localizations.moveUp, onPressed: () => _moveRule(index, -1)),
+            const Divider(thickness: 0.5, height: 5),
+            BottomSheetItem(text: localizations.moveDown, onPressed: () => _moveRule(index, 1)),
+            const Divider(thickness: 0.5, height: 5),
+            BottomSheetItem(
+                text: localizations.dragSort,
+                onPressed: () {
+                  setState(() => dragIndex = index);
                 }),
             const Divider(thickness: 0.5, height: 5),
             BottomSheetItem(
@@ -524,22 +569,55 @@ class _RewriteRuleState extends State<RewriteRule> {
                                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500))),
                         SwitchWidget(value: rule.enabled, onChanged: (val) => rule.enabled = val, scale: 0.8)
                       ]),
+                      const SizedBox(height: 8),
                       textField('${localizations.name}:', nameInput, localizations.pleaseEnter),
-                      textField('URL:', urlInput, 'https://www.example.com/api/*',
-                          required: true, keyboardType: TextInputType.url),
+                      const SizedBox(height: 8),
+                      // URL input with Method as prefix (method shown before the URL field)
+                      Row(children: [
+                        SizedBox(width: 60, child: Text('URL:', style: const TextStyle(fontSize: 16))),
+                        Expanded(
+                          child: TextFormField(
+                            controller: urlInput,
+                            validator: (val) => val?.isNotEmpty == true ? null : "",
+                            keyboardType: TextInputType.url,
+                            decoration: InputDecoration(
+                              hintText: 'https://www.example.com/api/*',
+                              hintStyle: TextStyle(color: Colors.grey.shade500),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 10),
+                              errorStyle: const TextStyle(height: 0, fontSize: 0),
+                              border: const OutlineInputBorder(),
+                              prefixIcon: Padding(
+                                padding: const EdgeInsets.only(left: 6, right: 6),
+                                child: MethodPopupMenu(
+                                  value: rule.method,
+                                  showSeparator: true,
+                                  onChanged: (val) {
+                                    setState(() {
+                                      rule.method = val;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 8),
                       Row(children: [
                         SizedBox(
                             width: 60,
                             child: Text('${localizations.action}:',
                                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500))),
                         SizedBox(
-                            width: 165,
+                            width: 185,
                             height: 50,
                             child: DropdownButtonFormField<RuleType>(
                               onSaved: (val) => rule.type = val!,
-                              value: ruleType,
+                              initialValue: ruleType,
                               decoration: const InputDecoration(
-                                  errorStyle: TextStyle(height: 0, fontSize: 0), contentPadding: EdgeInsets.only()),
+                                  border: OutlineInputBorder(),
+                                  errorStyle: TextStyle(height: 0, fontSize: 0),
+                                  contentPadding: EdgeInsets.only(left: 5)),
                               items: RuleType.values
                                   .map((e) => DropdownMenuItem(value: e, child: Text(isCN ? e.label : e.name)))
                                   .toList(),
@@ -607,8 +685,9 @@ class _RewriteRuleState extends State<RewriteRule> {
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: TextStyle(color: Colors.grey.shade500),
-          contentPadding: const EdgeInsets.only(),
+          contentPadding: const EdgeInsets.only(left: 5),
           errorStyle: const TextStyle(height: 0, fontSize: 0),
+          border: const OutlineInputBorder(),
         ),
       ))
     ]);

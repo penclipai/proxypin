@@ -69,7 +69,7 @@ class _LeftNavigationBarState extends State<LeftNavigationBar> {
           }
 
           return Container(
-            width: localizations.localeName == 'en' ? 70 : 57,
+            width: (localizations.localeName == 'zh' || localizations.localeName == 'zh_Hant') ? 57 : 70,
             decoration:
                 BoxDecoration(border: Border(right: BorderSide(color: Theme.of(context).dividerColor, width: 0.2))),
             child: Column(children: <Widget>[
@@ -85,6 +85,7 @@ class _LeftNavigationBarState extends State<LeftNavigationBar> {
                       message: localizations.preference,
                       preferBelow: false,
                       child: IconButton(
+                          iconSize: 22,
                           onPressed: () {
                             showDialog(
                                 context: context,
@@ -96,6 +97,7 @@ class _LeftNavigationBarState extends State<LeftNavigationBar> {
                       preferBelow: true,
                       message: localizations.feedback,
                       child: IconButton(
+                        iconSize: 22,
                         onPressed: () => launchUrl(Uri.parse("https://github.com/wanghongenpin/proxypin/issues")),
                         icon: Icon(Icons.feedback_outlined, color: Colors.grey.shade500),
                       )),
@@ -114,7 +116,7 @@ class _LeftNavigationBarState extends State<LeftNavigationBar> {
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         selectedIconTheme: IconTheme.of(context).copyWith(color: Theme.of(context).colorScheme.primary, size: 22),
         unselectedIconTheme:
-            IconTheme.of(context).copyWith(color: IconTheme.of(context).color?.withOpacity(0.55), size: 22),
+            IconTheme.of(context).copyWith(color: IconTheme.of(context).color?.withValues(alpha: 0.55), size: 22),
         labelType: NavigationRailLabelType.all,
         destinations: destinations,
         selectedIndex: index,

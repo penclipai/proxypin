@@ -4,9 +4,9 @@ import NetworkExtension
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
-    
+
     var backgroundAudioEnable: Bool = true
-    
+
     override func application(_ application: UIApplication,
                               didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         GeneratedPluginRegistrant.register(with: self)
@@ -21,18 +21,18 @@ import NetworkExtension
                 } else if ("restartVpn" == call.method){
                     let arguments = call.arguments as? Dictionary<String, AnyObject>
 //                     VpnManager.shared.disconnect()
-                    VpnManager.shared.restartConnect(host: arguments?["proxyHost"] as? String ,port: arguments?["proxyPort"] as? Int, ipProxy: arguments?["ipProxy"] as? Bool)
+                    VpnManager.shared.restartConnect(host: arguments?["proxyHost"] as? String ,port: arguments?["proxyPort"] as? Int, ipProxy: arguments?["ipProxy"] as? Bool, proxyPassDomains: arguments?["proxyPassDomains"] as? [String])
                 } else {
                     let arguments = call.arguments as? Dictionary<String, AnyObject>
-                    VpnManager.shared.connect(host: arguments?["proxyHost"] as? String ,port: arguments?["proxyPort"] as? Int, ipProxy: arguments?["ipProxy"] as? Bool)
+                    VpnManager.shared.connect(host: arguments?["proxyHost"] as? String ,port: arguments?["proxyPort"] as? Int, ipProxy: arguments?["ipProxy"] as? Bool, proxyPassDomains: arguments?["proxyPassDomains"] as? [String])
               }
           })
-      
+
         if #available(iOS 13.0.0, *) {
             PictureInPictureManager.regirst(flutter: controller as! FlutterBinaryMessenger)
             MethodHandler.register(with: self.registrar(forPlugin: MethodHandler.name)!)
         }
-        
+
         if let window = self.window {
             window.rootViewController = controller
         }

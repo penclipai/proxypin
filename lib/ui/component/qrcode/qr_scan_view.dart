@@ -11,24 +11,33 @@ class QrCodeScanner {
   static Future<String?> scan(BuildContext context) async {
     var status = await Permission.camera.status;
 
-    if (status.isRestricted || status.isPermanentlyDenied) {
-      openAppSettings();
-      return Future.value(null);
-    } else if (!status.isGranted) {
+    if (!status.isGranted) {
       status = await Permission.camera.request();
     }
 
-    if (status.isDenied) {
+    if (!status.isGranted) {
       if (!context.mounted) return Future.value(null);
       AppLocalizations localizations = AppLocalizations.of(context)!;
       bool isCN = localizations.localeName == 'zh';
-      showDialog(
+      await showDialog(
           context: context,
           builder: (context) => AlertDialog(
                 content: Text(isCN ? "请授予相机权限" : "Please grant camera permission"),
                 actions: <Widget>[
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
+                    child: Text(localizations.cancel),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      if (!context.mounted) return Future.value(null);
+                      Navigator.of(context).pop();
+                      final PermissionStatus newStatus = await Permission.camera.request();
+                      // Flutter权限处理有bug  url: https://github.com/Baseflow/flutter-permission-handler/issues/1206
+                      if (newStatus.isRestricted || newStatus.isPermanentlyDenied) {
+                        openAppSettings();
+                      }
+                    },
                     child: Text(localizations.confirm),
                   ),
                 ],
@@ -84,7 +93,7 @@ class _QrReaderViewState extends State<QeCodeScanView> with TickerProviderStateM
     _initAnimation();
   }
 
-  handle(String data) async {
+  Future<void> handle(String data) async {
     if (!isScan) return;
     stop();
     if (mounted) await Navigator.of(context, rootNavigator: true).maybePop(data);
@@ -141,7 +150,7 @@ class _QrReaderViewState extends State<QeCodeScanView> with TickerProviderStateM
     });
   }
 
-  scanImage(String path) {
+  void scanImage(String path) {
     FlutterQrReader.imgScan(path).then((value) {
       stop();
       if (mounted) {
@@ -190,12 +199,9 @@ class _QrReaderViewState extends State<QeCodeScanView> with TickerProviderStateM
                   children: <Widget>[
                     IconButton(
                       onPressed: () async {
-                        final result = await FilePicker.platform.pickFiles(
-                          type: FileType.image,
-                          allowMultiple: false,
-                        );
-                        if (result == null || result.files.isEmpty) return;
-                        final path = result.files.first.path;
+                        final file = await FilePicker.pickFile(type: FileType.image);
+                        if (file == null) return;
+                        final path = file.path;
                         if (path == null) return;
                         scanImage(path);
                       },

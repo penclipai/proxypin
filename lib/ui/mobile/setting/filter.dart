@@ -15,7 +15,6 @@
  */
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
@@ -25,6 +24,7 @@ import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/util/logger.dart';
+import 'package:proxypin/ui/component/domain_add_dialog.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/utils/platform.dart';
 import 'package:share_plus/share_plus.dart';
@@ -136,14 +136,13 @@ class _DomainFilterState extends State<DomainFilter> {
   }
 
   //导入
-  import() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
-    if (result == null || result.files.isEmpty) {
+  Future<void> import() async {
+    final file = await FilePicker.pickFile(type: FileType.any);
+    if (file == null) {
       return;
     }
-    var file = File(result.files.single.path!);
     try {
-      List json = jsonDecode(await file.readAsString());
+      List json = jsonDecode(await file.xFile.readAsString());
       for (var item in json) {
         widget.hostList.add(item);
       }
@@ -173,53 +172,6 @@ class _DomainFilterState extends State<DomainFilter> {
   }
 }
 
-class DomainAddDialog extends StatelessWidget {
-  final HostList hostList;
-  final int? index;
-
-  const DomainAddDialog({super.key, required this.hostList, this.index});
-
-  @override
-  Widget build(BuildContext context) {
-    AppLocalizations localizations = AppLocalizations.of(context)!;
-
-    GlobalKey formKey = GlobalKey<FormState>();
-    String? host = index == null ? null : hostList.list.elementAt(index!).pattern.replaceAll(".*", "*");
-    return AlertDialog(
-        scrollable: true,
-        content: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Form(
-                key: formKey,
-                child: Column(children: <Widget>[
-                  TextFormField(
-                      initialValue: host,
-                      decoration: const InputDecoration(labelText: 'Host', hintText: '*.example.com'),
-                      validator: (val) => val == null || val.trim().isEmpty ? localizations.cannotBeEmpty : null,
-                      onChanged: (val) => host = val)
-                ]))),
-        actions: [
-          TextButton(child: Text(localizations.cancel), onPressed: () => Navigator.of(context).pop()),
-          TextButton(
-              child: Text(localizations.save),
-              onPressed: () {
-                if (!(formKey.currentState as FormState).validate()) {
-                  return;
-                }
-                try {
-                  if (index != null) {
-                    hostList.list[index!] = RegExp(host!.trim().replaceAll("*", ".*"));
-                  } else {
-                    hostList.add(host!.trim());
-                  }
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
-                }
-                Navigator.of(context).pop(host);
-              }),
-        ]);
-  }
-}
 
 ///域名列表
 class DomainList extends StatefulWidget {
@@ -239,7 +191,7 @@ class _DomainListState extends State<DomainList> {
   bool changed = false;
   bool multiple = false;
 
-  onChanged() {
+  void onChanged() {
     changed = true;
     widget.onChange.call();
   }
@@ -247,11 +199,11 @@ class _DomainListState extends State<DomainList> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        persistentFooterButtons: [multiple ? globalMenu() : const SizedBox()],
+        persistentFooterButtons: multiple ? [globalMenu()] : null,
         body: Container(
             padding: const EdgeInsets.only(top: 10),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
             ),
             child: Scrollbar(
                 child: ListView(children: [
@@ -267,13 +219,13 @@ class _DomainListState extends State<DomainList> {
             ]))));
   }
 
-  globalMenu() {
+  Stack globalMenu() {
     return Stack(children: [
       Container(
           height: 50,
           width: double.infinity,
           margin: const EdgeInsets.only(top: 10),
-          decoration: BoxDecoration(border: Border.all(color: Colors.grey.withOpacity(0.2)))),
+          decoration: BoxDecoration(border: Border.all(color: Colors.grey.withValues(alpha: 0.2)))),
       Positioned(
           top: 0,
           left: 0,
@@ -317,7 +269,7 @@ class _DomainListState extends State<DomainList> {
           enableFeedback: false,
           highlightColor: Colors.transparent,
           splashColor: Colors.transparent,
-          hoverColor: primaryColor.withOpacity(0.3),
+          hoverColor: primaryColor.withValues(alpha: 0.3),
           onLongPress: () => showMenus(index),
           // menus
           onDoubleTap: () => showEdit(index),
@@ -334,9 +286,9 @@ class _DomainListState extends State<DomainList> {
           },
           child: Container(
               color: selected.contains(index)
-                  ? primaryColor.withOpacity(0.8)
+                  ? primaryColor.withValues(alpha: 0.8)
                   : index.isEven
-                      ? Colors.grey.withOpacity(0.1)
+                      ? Colors.grey.withValues(alpha: 0.1)
                       : null,
               height: 38,
               padding: const EdgeInsets.symmetric(vertical: 3),
@@ -350,7 +302,7 @@ class _DomainListState extends State<DomainList> {
     });
   }
 
-  showEdit([int? index]) {
+  void showEdit([int? index]) {
     showDialog(
         context: context,
         barrierDismissible: false,
@@ -366,7 +318,7 @@ class _DomainListState extends State<DomainList> {
   }
 
   //点击菜单
-  showMenus(int index) {
+  void showMenus(int index) {
     setState(() {
       selected.add(index);
     });
@@ -426,7 +378,7 @@ class _DomainListState extends State<DomainList> {
   }
 
   //导出
-  export(List<int> indexes) async {
+  Future<void> export(List<int> indexes) async {
     if (indexes.isEmpty) return;
 
     String fileName = 'host-filters.config';
@@ -442,9 +394,10 @@ class _DomainListState extends State<DomainList> {
     }
 
     final XFile file = XFile.fromData(utf8.encode(jsonEncode(list)), mimeType: 'config');
-    await Share.shareXFiles([file],
+    await SharePlus.instance.share(ShareParams(
+        files: [file],
         fileNameOverrides: [fileName],
-        sharePositionOrigin: box == null ? null : box.localToGlobal(Offset.zero) & box.size);
+        sharePositionOrigin: box == null ? null : box.localToGlobal(Offset.zero) & box.size));
   }
 
   //删除

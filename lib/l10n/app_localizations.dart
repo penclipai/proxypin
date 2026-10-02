@@ -1,12 +1,16 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
-import 'app_localizations_en.dart';
-import 'app_localizations_zh.dart';
+import 'app_localizations_en.dart' deferred as app_localizations_en;
+import 'app_localizations_es.dart' deferred as app_localizations_es;
+import 'app_localizations_id.dart' deferred as app_localizations_id;
+import 'app_localizations_pt.dart' deferred as app_localizations_pt;
+import 'app_localizations_th.dart' deferred as app_localizations_th;
+import 'app_localizations_vi.dart' deferred as app_localizations_vi;
+import 'app_localizations_zh.dart' deferred as app_localizations_zh;
 
 // ignore_for_file: type=lint
 
@@ -92,9 +96,33 @@ abstract class AppLocalizations {
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
+    Locale('es'),
+    Locale('id'),
+    Locale('pt'),
+    Locale('pt', 'BR'),
+    Locale('th'),
+    Locale('vi'),
     Locale('zh'),
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant')
   ];
+
+  /// No description provided for @breakpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'Breakpoint'**
+  String get breakpoint;
+
+  /// No description provided for @breakpointRule.
+  ///
+  /// In en, this message translates to:
+  /// **'Breakpoint Rule'**
+  String get breakpointRule;
+
+  /// No description provided for @name.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get name;
 
   /// No description provided for @requests.
   ///
@@ -192,10 +220,16 @@ abstract class AppLocalizations {
   /// **'Proxy Setting'**
   String get proxySetting;
 
+  /// No description provided for @setAs.
+  ///
+  /// In en, this message translates to:
+  /// **'Set as '**
+  String get setAs;
+
   /// No description provided for @systemProxy.
   ///
   /// In en, this message translates to:
-  /// **'Set as System Proxy'**
+  /// **'System Proxy'**
   String get systemProxy;
 
   /// No description provided for @enabledHTTP2.
@@ -336,11 +370,47 @@ abstract class AppLocalizations {
   /// **'Automatically start recording traffic when the program starts'**
   String get autoStartupDescribe;
 
+  /// No description provided for @minimizeToTrayTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize to tray on close'**
+  String get minimizeToTrayTitle;
+
+  /// No description provided for @minimizeToTraySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Closing the window will keep ProxyPin running and hide it to the system tray.'**
+  String get minimizeToTraySubtitle;
+
+  /// No description provided for @trayClosePromptContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Closing the window will keep ProxyPin running in the system tray. Do you want to minimize it now?'**
+  String get trayClosePromptContent;
+
+  /// No description provided for @trayCloseExitAnyway.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit anyway'**
+  String get trayCloseExitAnyway;
+
+  /// No description provided for @trayCloseMinimizeToTray.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize to tray'**
+  String get trayCloseMinimizeToTray;
+
   /// No description provided for @copied.
   ///
   /// In en, this message translates to:
   /// **'Copied to clipboard'**
   String get copied;
+
+  /// No description provided for @execute.
+  ///
+  /// In en, this message translates to:
+  /// **'Execute'**
+  String get execute;
 
   /// No description provided for @cancel.
   ///
@@ -425,6 +495,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Export successful'**
   String get exportSuccess;
+
+  /// No description provided for @exportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Export failed'**
+  String get exportFailed;
 
   /// No description provided for @deleteSuccess.
   ///
@@ -624,6 +700,24 @@ abstract class AppLocalizations {
   /// **'Edit'**
   String get edit;
 
+  /// No description provided for @moveUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Move Up'**
+  String get moveUp;
+
+  /// No description provided for @moveDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Move Down'**
+  String get moveDown;
+
+  /// No description provided for @dragSort.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to Sort'**
+  String get dragSort;
+
   /// No description provided for @disabled.
   ///
   /// In en, this message translates to:
@@ -653,6 +747,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Click'**
   String get click;
+
+  /// No description provided for @loadRemoteScript.
+  ///
+  /// In en, this message translates to:
+  /// **'load remote script'**
+  String get loadRemoteScript;
 
   /// No description provided for @replace.
   ///
@@ -725,6 +825,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit Report Server'**
   String get editReportServer;
+
+  /// No description provided for @splitReport.
+  ///
+  /// In en, this message translates to:
+  /// **'Split Report'**
+  String get splitReport;
 
   /// No description provided for @serverUrl.
   ///
@@ -894,6 +1000,12 @@ abstract class AppLocalizations {
   /// **'Select action'**
   String get selectAction;
 
+  /// No description provided for @select.
+  ///
+  /// In en, this message translates to:
+  /// **'Select'**
+  String get select;
+
   /// No description provided for @copy.
   ///
   /// In en, this message translates to:
@@ -935,6 +1047,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Copy as Python Requests'**
   String get copyAsPythonRequests;
+
+  /// No description provided for @copyAsFetch.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy as fetch'**
+  String get copyAsFetch;
 
   /// No description provided for @delete.
   ///
@@ -1032,6 +1150,12 @@ abstract class AppLocalizations {
   /// **'View Export'**
   String get viewExport;
 
+  /// No description provided for @exportDomainHar.
+  ///
+  /// In en, this message translates to:
+  /// **'Export This Domain HAR'**
+  String get exportDomainHar;
+
   /// No description provided for @timeDesc.
   ///
   /// In en, this message translates to:
@@ -1097,12 +1221,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Favorite deleted'**
   String get deleteFavoriteSuccess;
-
-  /// No description provided for @name.
-  ///
-  /// In en, this message translates to:
-  /// **'Name'**
-  String get name;
 
   /// No description provided for @historyRecord.
   ///
@@ -1440,11 +1558,11 @@ abstract class AppLocalizations {
   /// **'Share cURL Request'**
   String get shareCurl;
 
-  /// No description provided for @shareRequestResponse.
+  /// No description provided for @requestResponse.
   ///
   /// In en, this message translates to:
-  /// **'Share Request and Response'**
-  String get shareRequestResponse;
+  /// **'Request and Response'**
+  String get requestResponse;
 
   /// No description provided for @captureDetail.
   ///
@@ -1539,13 +1657,13 @@ abstract class AppLocalizations {
   /// No description provided for @ipLayerProxy.
   ///
   /// In en, this message translates to:
-  /// **'IP Layer Proxy(Beta)'**
+  /// **'IP Layer Proxy'**
   String get ipLayerProxy;
 
   /// No description provided for @ipLayerProxyDesc.
   ///
   /// In en, this message translates to:
-  /// **'IP layer proxy can capture Flutter app requests, currently not very stable, welcome to submit PR'**
+  /// **'IP layer proxy can capture Flutter app requests'**
   String get ipLayerProxyDesc;
 
   /// No description provided for @inputAddress.
@@ -1614,18 +1732,6 @@ abstract class AppLocalizations {
   /// **'Show quick access to small window Icon'**
   String get pipIconDescribe;
 
-  /// No description provided for @headerExpanded.
-  ///
-  /// In en, this message translates to:
-  /// **'Headers Expanded'**
-  String get headerExpanded;
-
-  /// No description provided for @headerExpandedSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Details page Headers is expanded by default'**
-  String get headerExpandedSubtitle;
-
   /// No description provided for @bottomNavigation.
   ///
   /// In en, this message translates to:
@@ -1649,6 +1755,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Automatically clean up requests on memory limit reached and keep 32 most recent after cleaning'**
   String get memoryCleanupSubtitle;
+
+  /// No description provided for @clearConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm before clearing captured records'**
+  String get clearConfirm;
+
+  /// No description provided for @clearConfirmSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show a confirmation dialog before clearing captured records'**
+  String get clearConfirmSubtitle;
 
   /// No description provided for @unlimited.
   ///
@@ -1866,6 +1984,84 @@ abstract class AppLocalizations {
   /// **'QR Code'**
   String get qrCode;
 
+  /// No description provided for @jsonViewer.
+  ///
+  /// In en, this message translates to:
+  /// **'JSON Viewer'**
+  String get jsonViewer;
+
+  /// No description provided for @xmlViewer.
+  ///
+  /// In en, this message translates to:
+  /// **'XML Viewer'**
+  String get xmlViewer;
+
+  /// No description provided for @textDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Text Diff'**
+  String get textDiff;
+
+  /// No description provided for @textEditor.
+  ///
+  /// In en, this message translates to:
+  /// **'Text Editor'**
+  String get textEditor;
+
+  /// No description provided for @compare.
+  ///
+  /// In en, this message translates to:
+  /// **'Compare'**
+  String get compare;
+
+  /// No description provided for @diffOriginal.
+  ///
+  /// In en, this message translates to:
+  /// **'Original'**
+  String get diffOriginal;
+
+  /// No description provided for @diffChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Changed'**
+  String get diffChanged;
+
+  /// No description provided for @diffIdentical.
+  ///
+  /// In en, this message translates to:
+  /// **'Two texts are identical'**
+  String get diffIdentical;
+
+  /// No description provided for @diffSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'+{added} −{removed}'**
+  String diffSummary(int added, int removed);
+
+  /// No description provided for @text.
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get text;
+
+  /// No description provided for @format.
+  ///
+  /// In en, this message translates to:
+  /// **'Format'**
+  String get format;
+
+  /// No description provided for @compact.
+  ///
+  /// In en, this message translates to:
+  /// **'Compact'**
+  String get compact;
+
+  /// No description provided for @wordWrap.
+  ///
+  /// In en, this message translates to:
+  /// **'Word Wrap'**
+  String get wordWrap;
+
   /// No description provided for @scanQrCode.
   ///
   /// In en, this message translates to:
@@ -1962,6 +2158,12 @@ abstract class AppLocalizations {
   /// **'Cipher'**
   String get cipher;
 
+  /// No description provided for @view.
+  ///
+  /// In en, this message translates to:
+  /// **'View'**
+  String get view;
+
   /// No description provided for @appUpdateCheckVersion.
   ///
   /// In en, this message translates to:
@@ -2015,6 +2217,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Ignore'**
   String get appUpdateIgnoreBtnTxt;
+
+  /// No description provided for @appUpdateInstallNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Install Now'**
+  String get appUpdateInstallNow;
+
+  /// No description provided for @appUpdateRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get appUpdateRetry;
+
+  /// No description provided for @appUpdateBackgroundDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download in background'**
+  String get appUpdateBackgroundDownload;
+
+  /// No description provided for @appUpdateOpenDownloadPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Download Page'**
+  String get appUpdateOpenDownloadPage;
 
   /// No description provided for @requestMap.
   ///
@@ -2075,12 +2301,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'AFDIAN'**
   String get sponsorAfdian;
-
-  /// No description provided for @sponsorBuyMeCoffee.
-  ///
-  /// In en, this message translates to:
-  /// **'Buy Me a Coffee'**
-  String get sponsorBuyMeCoffee;
 
   /// No description provided for @privacyPolicy.
   ///
@@ -2159,6 +2379,498 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Room ID'**
   String get roomIdLabel;
+
+  /// No description provided for @requestCrypto.
+  ///
+  /// In en, this message translates to:
+  /// **'Request Crypto'**
+  String get requestCrypto;
+
+  /// No description provided for @cryptoDecoded.
+  ///
+  /// In en, this message translates to:
+  /// **'Decoded'**
+  String get cryptoDecoded;
+
+  /// No description provided for @cryptoDecodeToggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Decrypt'**
+  String get cryptoDecodeToggle;
+
+  /// No description provided for @optional.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional'**
+  String get optional;
+
+  /// No description provided for @cryptoRuleField.
+  ///
+  /// In en, this message translates to:
+  /// **'Field Name'**
+  String get cryptoRuleField;
+
+  /// No description provided for @cryptoIvPrefixLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'IV Prefix'**
+  String get cryptoIvPrefixLabel;
+
+  /// No description provided for @cryptoIvPrefixTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the first N bytes of the response body as IV'**
+  String get cryptoIvPrefixTooltip;
+
+  /// No description provided for @local.
+  ///
+  /// In en, this message translates to:
+  /// **'Local'**
+  String get local;
+
+  /// No description provided for @remoteUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote URL'**
+  String get remoteUrl;
+
+  /// No description provided for @preview.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get preview;
+
+  /// No description provided for @environment.
+  ///
+  /// In en, this message translates to:
+  /// **'Environment'**
+  String get environment;
+
+  /// No description provided for @environmentVariables.
+  ///
+  /// In en, this message translates to:
+  /// **'Environment Variables'**
+  String get environmentVariables;
+
+  /// No description provided for @envGlobal.
+  ///
+  /// In en, this message translates to:
+  /// **'Global'**
+  String get envGlobal;
+
+  /// No description provided for @envManage.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Environments…'**
+  String get envManage;
+
+  /// No description provided for @envNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No Environment'**
+  String get envNone;
+
+  /// No description provided for @envDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this environment?'**
+  String get envDeleteConfirm;
+
+  /// No description provided for @envEmptyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'No variables yet. Click + to add.'**
+  String get envEmptyHint;
+
+  /// No description provided for @envUsageHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Reference variables as %s in rules, or read/write via context.env in scripts.'**
+  String get envUsageHint;
+
+  /// No description provided for @envInsertBuiltIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert built-in variable'**
+  String get envInsertBuiltIn;
+
+  /// No description provided for @weakNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Network Throttling'**
+  String get weakNetwork;
+
+  /// No description provided for @weakNetworkPreset.
+  ///
+  /// In en, this message translates to:
+  /// **'Preset'**
+  String get weakNetworkPreset;
+
+  /// No description provided for @weakNetworkPresetOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get weakNetworkPresetOffline;
+
+  /// No description provided for @weakNetworkPresetSlow.
+  ///
+  /// In en, this message translates to:
+  /// **'Slow'**
+  String get weakNetworkPresetSlow;
+
+  /// No description provided for @weakNetworkPresetWeak.
+  ///
+  /// In en, this message translates to:
+  /// **'Weak'**
+  String get weakNetworkPresetWeak;
+
+  /// No description provided for @weakNetworkLatency.
+  ///
+  /// In en, this message translates to:
+  /// **'Latency'**
+  String get weakNetworkLatency;
+
+  /// No description provided for @weakNetworkUpload.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload'**
+  String get weakNetworkUpload;
+
+  /// No description provided for @weakNetworkDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get weakNetworkDownload;
+
+  /// No description provided for @weakNetworkBandwidth.
+  ///
+  /// In en, this message translates to:
+  /// **'Bandwidth'**
+  String get weakNetworkBandwidth;
+
+  /// No description provided for @weakNetworkLossRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Packet Loss'**
+  String get weakNetworkLossRate;
+
+  /// No description provided for @weakNetworkRules.
+  ///
+  /// In en, this message translates to:
+  /// **'URL Rules'**
+  String get weakNetworkRules;
+
+  /// No description provided for @mcpService.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Server'**
+  String get mcpService;
+
+  /// No description provided for @mcpServiceDescribe.
+  ///
+  /// In en, this message translates to:
+  /// **'Starts a local HTTP server for Model Context Protocol (MCP) communication with AI tools such as Claude.'**
+  String get mcpServiceDescribe;
+
+  /// No description provided for @mcpEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable MCP Server'**
+  String get mcpEnable;
+
+  /// No description provided for @mcpPort.
+  ///
+  /// In en, this message translates to:
+  /// **'Port'**
+  String get mcpPort;
+
+  /// No description provided for @mcpAdvanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced settings'**
+  String get mcpAdvanced;
+
+  /// No description provided for @mcpConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Configuration'**
+  String get mcpConfig;
+
+  /// No description provided for @mcpRedact.
+  ///
+  /// In en, this message translates to:
+  /// **'Redact sensitive data before sending to AI'**
+  String get mcpRedact;
+
+  /// No description provided for @mcpRedactDescribe.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatically redact sensitive information before it is sent to AI tools.'**
+  String get mcpRedactDescribe;
+
+  /// No description provided for @mcpHintRun.
+  ///
+  /// In en, this message translates to:
+  /// **'Run this command in Terminal to add ProxyPin MCP to {client}.'**
+  String mcpHintRun(String client);
+
+  /// No description provided for @mcpAboutTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'About MCP Integration'**
+  String get mcpAboutTitle;
+
+  /// No description provided for @mcpAboutText.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP (Model Context Protocol) lets AI assistants like Claude interact with ProxyPin. AI can read captured HTTP traffic, create debugging rules (Map Local, Map Remote, Breakpoints), and help analyze network issues.'**
+  String get mcpAboutText;
+
+  /// No description provided for @mcpLearnMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Learn more about MCP'**
+  String get mcpLearnMore;
+
+  /// No description provided for @mcpSkills.
+  ///
+  /// In en, this message translates to:
+  /// **'Skills'**
+  String get mcpSkills;
+
+  /// No description provided for @mcpSkillsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Skills'**
+  String get mcpSkillsTitle;
+
+  /// No description provided for @mcpSkillsReadonly.
+  ///
+  /// In en, this message translates to:
+  /// **'Read-only traffic tools'**
+  String get mcpSkillsReadonly;
+
+  /// No description provided for @mcpSkillsRules.
+  ///
+  /// In en, this message translates to:
+  /// **'Rules, replay & environment tools'**
+  String get mcpSkillsRules;
+
+  /// No description provided for @mcpEndpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Endpoint'**
+  String get mcpEndpoint;
+
+  /// No description provided for @mcpPortInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a valid port between 1024 and 65535'**
+  String get mcpPortInvalid;
+
+  /// No description provided for @mcpAccessToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Access Token'**
+  String get mcpAccessToken;
+
+  /// No description provided for @mcpLanGuide.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep this phone and your computer on the same Wi-Fi, then run one of the commands below in your computer\'s terminal, or paste the configuration into your AI client\'s MCP settings.'**
+  String get mcpLanGuide;
+
+  /// No description provided for @mcpLanTokenNote.
+  ///
+  /// In en, this message translates to:
+  /// **'The token authorizes full access to the MCP tools. Tap the refresh button next to the token to revoke it and issue a new one.'**
+  String get mcpLanTokenNote;
+
+  /// No description provided for @mcpOtherClients.
+  ///
+  /// In en, this message translates to:
+  /// **'Other AI clients'**
+  String get mcpOtherClients;
+
+  /// No description provided for @mcpOtherClientsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Universal Streamable HTTP config for Cursor, Cline, Gemini CLI, Cherry Studio, VS Code Copilot and other MCP clients. Paste the URL and Bearer token, or the full JSON, into the client\'s MCP settings.'**
+  String get mcpOtherClientsHint;
+
+  /// No description provided for @mcpOneClick.
+  ///
+  /// In en, this message translates to:
+  /// **'One-click setup on your computer'**
+  String get mcpOneClick;
+
+  /// No description provided for @mcpOneClickHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy the matching command and run it on the computer: Terminal for macOS/Linux, PowerShell for Windows. It auto-detects installed AI clients (Claude Code, Codex, Cursor, Gemini CLI) and configures them over Wi-Fi.'**
+  String get mcpOneClickHint;
+
+  /// No description provided for @mcpRegenerateToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset token'**
+  String get mcpRegenerateToken;
+
+  /// No description provided for @mcpStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get mcpStatusRunning;
+
+  /// No description provided for @mcpStatusStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped'**
+  String get mcpStatusStopped;
+
+  /// No description provided for @mcpClientLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'AI client'**
+  String get mcpClientLabel;
+
+  /// No description provided for @mcpTransportLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Transport'**
+  String get mcpTransportLabel;
+
+  /// No description provided for @mcpCommandLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect command'**
+  String get mcpCommandLabel;
+
+  /// No description provided for @mcpClientsIntl.
+  ///
+  /// In en, this message translates to:
+  /// **'International'**
+  String get mcpClientsIntl;
+
+  /// No description provided for @mcpClientsDomestic.
+  ///
+  /// In en, this message translates to:
+  /// **'Chinese'**
+  String get mcpClientsDomestic;
+
+  /// No description provided for @mcpTransportStdio.
+  ///
+  /// In en, this message translates to:
+  /// **'stdio'**
+  String get mcpTransportStdio;
+
+  /// No description provided for @mcpTransportHttp.
+  ///
+  /// In en, this message translates to:
+  /// **'HTTP'**
+  String get mcpTransportHttp;
+
+  /// No description provided for @mcpHintTerminal.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy and run in your terminal.'**
+  String get mcpHintTerminal;
+
+  /// No description provided for @mcpHintJson.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste into your client\'s MCP settings.'**
+  String get mcpHintJson;
+
+  /// No description provided for @mcpHintCopilot.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste into VS Code settings.json → mcp.servers.'**
+  String get mcpHintCopilot;
+
+  /// No description provided for @mcpHintLingma.
+  ///
+  /// In en, this message translates to:
+  /// **'Tongyi Lingma IDE → Profile → Settings → MCP Service → Add manually (HTTP/URL type).'**
+  String get mcpHintLingma;
+
+  /// No description provided for @mcpHintCherry.
+  ///
+  /// In en, this message translates to:
+  /// **'Cherry Studio → Settings → MCP Servers → Add.'**
+  String get mcpHintCherry;
+
+  /// No description provided for @mcpHintDoubao.
+  ///
+  /// In en, this message translates to:
+  /// **'MarsCode IDE → Settings → MCP → Add (HTTP/URL type).'**
+  String get mcpHintDoubao;
+
+  /// No description provided for @mcpSetup.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto setup'**
+  String get mcpSetup;
+
+  /// No description provided for @mcpStartChat.
+  ///
+  /// In en, this message translates to:
+  /// **'Start chat'**
+  String get mcpStartChat;
+
+  /// No description provided for @mcpOpenTerminal.
+  ///
+  /// In en, this message translates to:
+  /// **'Run in terminal'**
+  String get mcpOpenTerminal;
+
+  /// No description provided for @mcpSetupDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured. Restart your AI client to apply.'**
+  String get mcpSetupDone;
+
+  /// No description provided for @mcpSetupFail.
+  ///
+  /// In en, this message translates to:
+  /// **'Setup failed: '**
+  String get mcpSetupFail;
+
+  /// No description provided for @mcpCliMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'CLI {cli} not found on PATH. Use \"Run in terminal\" instead.'**
+  String mcpCliMissing(Object cli);
+
+  /// No description provided for @mcpUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This client does not support auto setup, configure it manually.'**
+  String get mcpUnsupported;
+
+  /// No description provided for @mcpCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get mcpCopy;
+
+  /// No description provided for @mcpCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get mcpCopied;
+
+  /// No description provided for @mcpStartFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP service failed to start'**
+  String get mcpStartFailed;
+
+  /// No description provided for @mcpPrivacyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Only listens on 127.0.0.1 (this machine). Data leaves the app only when an AI client explicitly requests it via a tool.'**
+  String get mcpPrivacyHint;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
@@ -2166,24 +2878,38 @@ class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> 
 
   @override
   Future<AppLocalizations> load(Locale locale) {
-    return SynchronousFuture<AppLocalizations>(lookupAppLocalizations(locale));
+    return lookupAppLocalizations(locale);
   }
 
   @override
-  bool isSupported(Locale locale) => <String>['en', 'zh'].contains(locale.languageCode);
+  bool isSupported(Locale locale) => <String>['en', 'es', 'id', 'pt', 'th', 'vi', 'zh'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
 }
 
-AppLocalizations lookupAppLocalizations(Locale locale) {
+Future<AppLocalizations> lookupAppLocalizations(Locale locale) {
   // Lookup logic when language+script codes are specified.
   switch (locale.languageCode) {
     case 'zh':
       {
         switch (locale.scriptCode) {
           case 'Hant':
-            return AppLocalizationsZhHant();
+            return app_localizations_zh
+                .loadLibrary()
+                .then((dynamic _) => app_localizations_zh.AppLocalizationsZhHant());
+        }
+        break;
+      }
+  }
+
+  // Lookup logic when language+country codes are specified.
+  switch (locale.languageCode) {
+    case 'pt':
+      {
+        switch (locale.countryCode) {
+          case 'BR':
+            return app_localizations_pt.loadLibrary().then((dynamic _) => app_localizations_pt.AppLocalizationsPtBr());
         }
         break;
       }
@@ -2192,9 +2918,19 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
   // Lookup logic when only language code is specified.
   switch (locale.languageCode) {
     case 'en':
-      return AppLocalizationsEn();
+      return app_localizations_en.loadLibrary().then((dynamic _) => app_localizations_en.AppLocalizationsEn());
+    case 'es':
+      return app_localizations_es.loadLibrary().then((dynamic _) => app_localizations_es.AppLocalizationsEs());
+    case 'id':
+      return app_localizations_id.loadLibrary().then((dynamic _) => app_localizations_id.AppLocalizationsId());
+    case 'pt':
+      return app_localizations_pt.loadLibrary().then((dynamic _) => app_localizations_pt.AppLocalizationsPt());
+    case 'th':
+      return app_localizations_th.loadLibrary().then((dynamic _) => app_localizations_th.AppLocalizationsTh());
+    case 'vi':
+      return app_localizations_vi.loadLibrary().then((dynamic _) => app_localizations_vi.AppLocalizationsVi());
     case 'zh':
-      return AppLocalizationsZh();
+      return app_localizations_zh.loadLibrary().then((dynamic _) => app_localizations_zh.AppLocalizationsZh());
   }
 
   throw FlutterError('AppLocalizations.delegate failed to load unsupported locale "$locale". This is likely '

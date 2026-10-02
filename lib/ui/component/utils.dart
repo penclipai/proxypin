@@ -25,11 +25,15 @@ import 'package:proxypin/network/http/content_type.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/util/logger.dart';
 
+import '../../utils/lang.dart';
 import '../../utils/platform.dart';
+import '../toolbox/encoder.dart';
+import 'multi_window.dart';
 
 const contentMap = {
   ContentType.json: Icons.data_object,
   ContentType.html: Icons.html,
+  ContentType.xml: Icons.code,
   ContentType.js: Icons.javascript,
   ContentType.image: Icons.image,
   ContentType.video: Icons.video_call,
@@ -38,6 +42,38 @@ const contentMap = {
   ContentType.font: Icons.font_download,
   ContentType.sse: Icons.stream,
 };
+
+/// GraphQL 操作类型对应的高亮颜色
+/// mutation/subscription 会修改或订阅数据，用更醒目的橙红；query 用柔和的紫红
+Color graphqlOperationColor(String? operationType) {
+  switch (operationType) {
+    case 'mutation':
+      return const Color(0xFFD9822B); // 橙色：提交/修改数据
+    case 'subscription':
+      return const Color(0xFF2E9E83); // 青绿：订阅
+    case 'query':
+    default:
+      return const Color(0xFFB0578D); // 柔和紫红：读取数据
+  }
+}
+
+/// 生成 GraphQL operationName 的高亮 TextSpan，形如 `  (GetCountries)`
+/// 与前面的路径之间预留两个空格拉开间距，[fixAutoLines] 控制是否插入 0 宽字符防换行
+TextSpan? graphqlOperationSpan(HttpRequest request, {double? fontSize, bool fixAutoLines = false}) {
+  var operationName = request.graphqlOperationName;
+  if (operationName == null) {
+    return null;
+  }
+  var text = '  ($operationName)';
+  return TextSpan(
+    text: fixAutoLines ? text.fixAutoLines() : text,
+    style: TextStyle(
+      fontSize: fontSize,
+      color: graphqlOperationColor(request.graphqlOperationType),
+      fontWeight: FontWeight.w500,
+    ),
+  );
+}
 
 Widget getIcon(HttpResponse? response, {Color? color}) {
   if (response == null) {
@@ -99,6 +135,7 @@ String copyRawRequest(HttpRequest request) {
 }
 
 String copyRequest(HttpRequest request, HttpResponse? response) {
+  response ??= request.response;
   var sb = StringBuffer();
   sb.writeln("Request");
   sb.writeln("${request.method.name} ${request.requestUrl} ${request.protocolVersion}");
@@ -106,6 +143,7 @@ String copyRequest(HttpRequest request, HttpResponse? response) {
   sb.writeln();
   sb.writeln(request.bodyAsString);
 
+  sb.writeln();
   sb.writeln("--------------------------------------------------------");
   sb.writeln();
   sb.writeln("Response");
@@ -129,7 +167,8 @@ RelativeRect menuPosition(BuildContext context) {
   return position;
 }
 
-Widget contextMenu(BuildContext context, EditableTextState editableTextState, {ContextMenuButtonItem? customItem}) {
+Widget contextMenu(BuildContext context, EditableTextState editableTextState,
+    {ContextMenuButtonItem? customItem, bool copyValue = true}) {
   List<ContextMenuButtonItem> list = [
     ContextMenuButtonItem(
       onPressed: () {
@@ -142,17 +181,19 @@ Widget contextMenu(BuildContext context, EditableTextState editableTextState, {C
       },
       type: ContextMenuButtonType.copy,
     ),
-    ContextMenuButtonItem(
-      label: Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh') ? '复制值' : 'Copy Value',
-      onPressed: () {
-        unSelect(editableTextState);
-        Clipboard.setData(ClipboardData(text: editableTextState.textEditingValue.text)).then((value) {
-          if (context.mounted) FlutterToastr.show(AppLocalizations.of(context)!.copied, context);
-          editableTextState.hideToolbar();
-        });
-      },
-      type: ContextMenuButtonType.custom,
-    ),
+    // “复制值”在 header 等场景有用；body 整个文本即全部内容，用全选即可，故可关闭
+    if (copyValue)
+      ContextMenuButtonItem(
+        label: Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh') ? '复制值' : 'Copy Value',
+        onPressed: () {
+          unSelect(editableTextState);
+          Clipboard.setData(ClipboardData(text: editableTextState.textEditingValue.text)).then((value) {
+            if (context.mounted) FlutterToastr.show(AppLocalizations.of(context)!.copied, context);
+            editableTextState.hideToolbar();
+          });
+        },
+        type: ContextMenuButtonType.custom,
+      ),
     ContextMenuButtonItem(
       onPressed: () {
         editableTextState.selectAll(SelectionChangedCause.tap);
@@ -160,6 +201,13 @@ Widget contextMenu(BuildContext context, EditableTextState editableTextState, {C
       type: ContextMenuButtonType.selectAll,
     ),
   ];
+
+  //选中的文本，未选中时回退为整个值
+  final value = editableTextState.textEditingValue;
+  var payload = value.selection.textInside(value.text).trim();
+  if (payload.isEmpty) payload = value.text;
+
+  list.addAll(sendToToolItems(context, payload, () => editableTextState.hideToolbar()));
 
   if (customItem != null) {
     list.add(customItem);
@@ -180,6 +228,46 @@ Widget contextMenu(BuildContext context, EditableTextState editableTextState, {C
   );
 }
 
+/// “发送到解码器 / AES 解密” 菜单项，[payload] 为空时返回空列表
+List<ContextMenuButtonItem> sendToToolItems(BuildContext context, String payload, VoidCallback onDone) {
+  if (payload.isEmpty) return const [];
+
+  final bool isZh = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
+  return [
+    ContextMenuButtonItem(
+      label: isZh ? '发送到解码器' : 'Send to Decoder',
+      onPressed: () {
+        encodeWindow(EncoderType.base64, context, payload);
+        onDone();
+      },
+      type: ContextMenuButtonType.custom,
+    ),
+    ContextMenuButtonItem(
+      label: isZh ? '发送到 AES 解密' : 'Send to AES Decrypt',
+      onPressed: () {
+        openAesWindow(context, payload);
+        onDone();
+      },
+      type: ContextMenuButtonType.custom,
+    ),
+  ];
+}
+
+/// SelectionArea（SelectableRegionState）的右键菜单，用于 body 的虚拟化 / 超大文本等区域选择场景。
+/// [selected] 由调用方通过 SelectableRegion.onSelectionChanged 捕获。
+/// body 场景不提供“复制值”（复制全部用全选即可）。
+Widget selectableRegionContextMenu(BuildContext context, SelectableRegionState state, String selected) {
+  final payload = selected.trim();
+
+  //复用平台默认的 复制/全选/分享 项，再追加“发送到解码器/AES”
+  final list = <ContextMenuButtonItem>[
+    ...state.contextMenuButtonItems,
+    ...sendToToolItems(context, payload, () => state.hideToolbar()),
+  ];
+
+  return AdaptiveTextSelectionToolbar.buttonItems(anchors: state.contextMenuAnchors, buttonItems: list);
+}
+
 void unSelect(EditableTextState editableTextState) {
   editableTextState.userUpdateTextEditingValue(
     editableTextState.textEditingValue
@@ -188,26 +276,72 @@ void unSelect(EditableTextState editableTextState) {
   );
 }
 
-///Future
+///Future — skips rebuild when the resolved value equals [initialData].
 Widget futureWidget<T>(Future<T> future, Widget Function(T data) toWidget, {T? initialData, bool loading = false}) {
-  return FutureBuilder<T>(
+  return _FutureWidget<T>(
     future: future,
+    toWidget: toWidget,
     initialData: initialData,
-    builder: (BuildContext context, AsyncSnapshot<T> snapshot) {
-      if (snapshot.data != null) {
-        return toWidget(snapshot.requireData);
-      }
-
-      if (snapshot.connectionState == ConnectionState.done) {
-        if (snapshot.hasError) {
-          logger.e(snapshot.error);
-        }
-        return toWidget(snapshot.requireData);
-      }
-      //加载效果
-      return loading ? const Center(child: CircularProgressIndicator()) : const SizedBox();
-    },
+    loading: loading,
   );
+}
+
+class _FutureWidget<T> extends StatefulWidget {
+  final Future<T> future;
+  final Widget Function(T data) toWidget;
+  final T? initialData;
+  final bool loading;
+
+  const _FutureWidget({
+    required this.future,
+    required this.toWidget,
+    this.initialData,
+    this.loading = false,
+  });
+
+  @override
+  State<_FutureWidget<T>> createState() => _FutureWidgetState<T>();
+}
+
+class _FutureWidgetState<T> extends State<_FutureWidget<T>> {
+  T? _data;
+
+  @override
+  void initState() {
+    super.initState();
+    _data = widget.initialData;
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FutureWidget<T> old) {
+    super.didUpdateWidget(old);
+    // Future 实例变化（如 body 子树重建）时，继续展示当前已有的内容直到新结果返回，
+    // 不重置回 initialData，避免界面出现“刷新/闪烁”。
+    if (old.future != widget.future) {
+      _subscribe();
+    }
+  }
+
+  void _subscribe() {
+    final captured = widget.future;
+    captured.then((result) {
+      if (!mounted || widget.future != captured) return;
+      // Result unchanged — no rebuild needed.
+      if (result == _data) return;
+      setState(() => _data = result);
+    }).catchError((error) {
+      if (mounted) logger.e(error);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_data != null) {
+      return widget.toWidget(_data as T);
+    }
+    return widget.loading ? const Center(child: CircularProgressIndicator()) : const SizedBox();
+  }
 }
 
 Future showContextMenu(BuildContext context, Offset offset, {required List<PopupMenuEntry> items}) {

@@ -15,6 +15,7 @@
  */
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -32,7 +33,11 @@ import 'package:proxypin/network/channel/channel_context.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/http/websocket.dart';
 import 'package:proxypin/network/http/http_client.dart';
+import 'package:proxypin/mcp/mcp_service.dart';
+import 'package:proxypin/storage/histories.dart';
 import 'package:proxypin/ui/component/memory_cleanup.dart';
+import 'package:proxypin/ui/component/multi_select_controller.dart';
+import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/toolbox/toolbox.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/panel.dart';
@@ -40,6 +45,7 @@ import 'package:proxypin/ui/launch/launch.dart';
 import 'package:proxypin/ui/mobile/menu/drawer.dart';
 import 'package:proxypin/ui/mobile/menu/bottom_navigation.dart';
 import 'package:proxypin/ui/mobile/menu/menu.dart';
+import 'package:proxypin/ui/mobile/request/history.dart';
 import 'package:proxypin/ui/mobile/request/list.dart';
 import 'package:proxypin/ui/mobile/request/search.dart';
 import 'package:proxypin/ui/mobile/widgets/pip.dart';
@@ -50,6 +56,8 @@ import 'package:proxypin/utils/listenable_list.dart';
 import 'package:proxypin/utils/navigator.dart';
 
 import '../app_update/app_update_repository.dart';
+import 'package:proxypin/ui/component/multi_window.dart';
+import 'package:proxypin/ui/mobile/debug/breakpoint_executor.dart';
 
 ///移动端首页
 ///@author wanghongen
@@ -74,11 +82,15 @@ class MobileApp {
 
   ///请求列表容器
   static final container = ListenableList<HttpRequest>();
+
+  static final multiSelectController = MultiSelectController();
 }
 
 class MobileHomeState extends State<MobileHomePage> implements EventListener, LifecycleListener {
   /// 选择索引
   final ValueNotifier<int> _selectIndex = ValueNotifier(0);
+
+  StreamSubscription<HistoryItem>? _remoteHistorySubscription;
 
   late ProxyServer proxyServer;
 
@@ -98,6 +110,7 @@ class MobileHomeState extends State<MobileHomePage> implements EventListener, Li
   @override
   void onResponse(ChannelContext channelContext, HttpResponse response) {
     MobileApp.requestStateKey.currentState!.addResponse(channelContext, response);
+    NetworkTabController.current?.updateResponse(response);
   }
 
   @override
@@ -116,20 +129,72 @@ class MobileHomeState extends State<MobileHomePage> implements EventListener, Li
     proxyServer = ProxyServer(widget.configuration);
     proxyServer.addListener(this);
     proxyServer.start();
+    _remoteHistorySubscription = HistoryStorage.onRemoteImported.listen((item) => _openHistoryPage(item));
 
-    if (widget.appConfiguration.upgradeNoticeV22) {
+    // MCP 局域网服务：启用时随抓包一起启动，clear_session 同步清空界面列表
+    McpService.instance.clearUiSession = () async {
+      MobileApp.requestStateKey.currentState?.clean();
+    };
+    if (widget.appConfiguration.mcpEnabled) {
+      McpService.instance.attach(proxyServer, existing: MobileApp.container.source);
+      unawaited(McpService.instance.start(widget.appConfiguration).catchError((e) {
+        // 启动失败（如端口/绑定被拒）时持久化关闭，避免每次启动都重复失败
+        widget.appConfiguration.mcpEnabled = false;
+        widget.appConfiguration.flushConfig();
+      }));
+    }
+
+    if (widget.appConfiguration.upgradeNoticeV32) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         showUpgradeNotice();
       });
     } else if (Platform.isAndroid) {
       AppUpdateRepository.checkUpdate(context);
     }
+
+    // Handle breakpoint window on mobile
+    MultiWindow.onOpenWindow = (widgetName, args) async {
+      if (widgetName == 'BreakpointExecutor' && args != null) {
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BreakpointExecutor(
+              requestId: args['requestId'],
+              request: HttpRequest.fromJson(jsonDecode(jsonEncode(args['request']))),
+              response:
+                  args['response'] == null ? null : HttpResponse.fromJson(jsonDecode(jsonEncode(args['response']))),
+              isResponse: args['type'] == 'response',
+            ),
+          ),
+        );
+      }
+    };
   }
 
   @override
   void dispose() {
     AppLifecycleBinding.instance.removeListener(this);
+    _remoteHistorySubscription?.cancel();
     super.dispose();
+  }
+
+  void toRequestsView(HistoryItem item, HistoryStorage storage) {}
+
+  void _openHistoryPage(HistoryItem item) {
+    _selectIndex.value = 2;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(context)
+          .push(MaterialPageRoute(
+              builder: (BuildContext context) => HistoryRecord(history: item, proxyServer: proxyServer)))
+          .then((value) async {
+        Future.delayed(const Duration(seconds: 60), () => item.requests = null);
+      });
+    });
   }
 
   int exitTime = 0;
@@ -287,24 +352,24 @@ class MobileHomeState extends State<MobileHomePage> implements EventListener, Li
 
     String content = isCN
         ? '提示：默认不会开启HTTPS抓包，请安装证书后再开启HTTPS抓包。\n\n'
-            '1. 脚本支持多 URL 匹配；\n'
-            '2. 证书安装检测引导和自动安装证书；\n'
-            '3. 优化菜单 UI；\n'
-            '4. 搜索支持协议选择和耗时范围筛选；\n'
-            '5. 历史记录支持图片持久化；\n'
-            '6. 关于增加赞助；\n'
-            '7. 修复较大响应体 JSON Text 预览卡顿；\n'
-        : 'Tips: HTTPS packet capture is disabled by default. Please install the certificate before enabling HTTPS packet capture.\n\n'
-            '1. Script supports multiple URL matching;\n'
-            '2. Certificate installation detection guidance and automatic certificate installation;\n'
-            '3. Optimize menu UI;\n'
-            '4. Search supports protocol selection and filtering of time consumption range;\n'
-            '5. History records support image persistence;\n'
-            '6. About increasing sponsorship;\n'
-            '7. Fix large response body JSON Text preview lag;\n';
-    showAlertDialog(isCN ? '更新内容V${AppConfiguration.version}' : "Update content V${AppConfiguration.version}", content,
+            '1. 新增内置 MCP 服务，AI 助手（如 Claude）可接入查看与调试抓包流量；\n'
+            '2. 环境变量支持内置动态变量；\n'
+            '3. 请求重写规则支持上移、下移排序；\n'
+            '4. 修复 Windows 端右键菜单导致崩溃的问题；\n'
+            '5. 修复脚本或重写处理多值请求头（如多个 Set-Cookie）时被错误合并的问题；\n'
+            '6. 修复明文 HTTP/2（h2c）抓包、非 ASCII 域名归一化、以 IP 访问时证书校验失败等问题；\n'
+            '7. 修复 iOS 13 崩溃、无 Content-Length 响应 Body 丢失、Android VPN 目的端口记录等若干问题。\n'
+        : 'Note: HTTPS capture is disabled by default — please install the certificate before enabling HTTPS capture.\n\n'
+            '1. Added a built-in MCP server so AI assistants (e.g. Claude) can inspect and debug captured traffic;\n'
+            '2. Added built-in dynamic variables for environments;\n'
+            '3. Request rewrite rules can now be reordered with move up/down actions;\n'
+            '4. Fixed a crash triggered by the Windows context menu;\n'
+            '5. Fixed multi-value headers (e.g. multiple Set-Cookie) being incorrectly merged when handled by scripts or rewrite rules;\n'
+            '6. Fixed h2c (plaintext HTTP/2) capture, non-ASCII domain normalization, and certificate validation failures for IP hosts;\n'
+            '7. Fixed an iOS 13 crash, dropped bodies for close-delimited responses, Android VPN destination-port recording, and other issues.\n';
+    showAlertDialog(isCN ? '更新内容V${AppConfiguration.version}' : "What's new in V${AppConfiguration.version}", content,
         () {
-      widget.appConfiguration.upgradeNoticeV22 = false;
+      widget.appConfiguration.upgradeNoticeV32 = false;
       widget.appConfiguration.flushConfig();
     });
   }
@@ -322,7 +387,7 @@ class MobileHomeState extends State<MobileHomePage> implements EventListener, Li
                       onClose.call();
                       Navigator.pop(context);
                     },
-                    child: Text(localizations.cancel))
+                    child: Text(localizations.close))
               ],
               title: Text(title, style: const TextStyle(fontSize: 18)),
               content: SelectableText(content));
@@ -386,7 +451,10 @@ class RequestPageState extends State<RequestPage> {
                 value.connect ? remoteConnect(value) : const SizedBox(),
                 Expanded(
                     child: RequestListWidget(
-                        key: MobileApp.requestStateKey, proxyServer: proxyServer, list: MobileApp.container))
+                        key: MobileApp.requestStateKey,
+                        proxyServer: proxyServer,
+                        list: MobileApp.container,
+                        selectionController: MobileApp.multiSelectController))
               ]);
             }),
       ),
@@ -488,6 +556,17 @@ class _MobileAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   const _MobileAppBar(this.appConfiguration, this.proxyServer, {required this.remoteDevice});
 
+  Future<void> _onClear(BuildContext context, AppLocalizations localizations) async {
+    if (!appConfiguration.clearConfirm) {
+      MobileApp.requestStateKey.currentState?.clean();
+      return;
+    }
+
+    showConfirmDialog(context, title: localizations.clearConfirm, onConfirm: () {
+      MobileApp.requestStateKey.currentState?.clean();
+    });
+  }
+
   @override
   Size get preferredSize => const Size.fromHeight(42);
 
@@ -498,15 +577,18 @@ class _MobileAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     return AppBar(
         leading: bottomNavigation ? const SizedBox() : null,
-        systemOverlayStyle:
-            Platform.isAndroid ? SystemUiOverlayStyle(systemNavigationBarColor: ColorScheme.of(context).surface) : null,
+        systemOverlayStyle: Platform.isAndroid
+            ? SystemUiOverlayStyle(
+                systemNavigationBarColor: ColorScheme.of(context).surface,
+                statusBarColor: ColorScheme.of(context).surface)
+            : null,
         title: MobileSearch(
             key: MobileApp.searchStateKey, onSearch: (val) => MobileApp.requestStateKey.currentState?.search(val)),
         actions: [
           IconButton(
               tooltip: localizations.clear,
               icon: const Icon(Icons.delete_outline),
-              onPressed: () => MobileApp.requestStateKey.currentState?.clean()),
+              onPressed: () => _onClear(context, localizations)),
           const SizedBox(width: 2),
           MoreMenu(proxyServer: proxyServer, remoteDevice: remoteDevice),
           const SizedBox(width: 10),

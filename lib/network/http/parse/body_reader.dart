@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:proxypin/network/http/constants.dart';
 import 'package:proxypin/network/http/http.dart';
+import 'package:proxypin/network/http/http_headers.dart';
 
-import '../../../utils/num.dart';
 import '../codec.dart';
+import 'chunked_decoder.dart';
 
 class Result {
   final bool isDone;
@@ -35,17 +34,16 @@ class Result {
 class BodyReader {
   final HttpMessage message;
 
-  // BytesBuilder msgBytes = BytesBuilder();
-  int _offset = 0;
-  ReaderState _state;
-
   final BytesBuilder _bodyBuffer = BytesBuilder();
 
-  ///chunked编码 剩余未读取的chunk大小
-  int _chunkReadableSize = 0;
+  /// chunked 解码器，仅在 Transfer-Encoding: chunked 时创建；
+  /// 内部自行处理 chunk-size 行、chunk 内容尾部 \r\n、chunk-extension、trailer
+  /// headers 等跨 TCP 包边界的分片情况。
+  final ChunkedDecoder? _chunkedDecoder;
 
-  BodyReader(this.message)
-      : _state = message.headers.isChunked ? ReaderState.readChunkSize : ReaderState.readFixedLengthContent;
+  bool _done = false;
+
+  BodyReader(this.message) : _chunkedDecoder = message.headers.isChunked ? ChunkedDecoder() : null;
 
   Result readBody(Uint8List data) {
     if (_bodyBuffer.length > Codec.maxBodyLength) {
@@ -53,21 +51,35 @@ class BodyReader {
       throw ParserException('Body length exceeds ${Codec.maxBodyLength}');
     }
 
-    _offset = 0;
-
     if (message.headers.contentType == 'video/x-flv' || message.headers.contentType.startsWith("text/event-stream")) {
       //Directly forward without processing for now
       return Result(false, supportedParse: false, body: data);
     }
 
-    //chunked编码
-    if (message.headers.isChunked) {
+    // 响应既没有 Content-Length 也没有 Transfer-Encoding: chunked 时,按
+    // HTTP 语义 body 由连接关闭定界。直接原始转发,保留原始定界并让上游
+    // 关闭信号传递给客户端;否则 body 会被当空处理丢掉,客户端一直等不到
+    // 完整响应导致超时(issue #844)。
+    // 仅当 Content-Length 头缺失时判定(显式 CL:0 是空 body,不属于
+    // close-delimited);204/304/205 等无 body 状态码走原有解析路径。
+    var msg = message;
+    if (msg is HttpResponse &&
+        msg.status.code >= 200 &&
+        msg.status.code != 204 &&
+        msg.status.code != 304 &&
+        msg.status.code != 205 &&
+        msg.headers.get(HttpHeaders.CONTENT_LENGTH) == null &&
+        !msg.headers.isChunked) {
+      return Result(false, supportedParse: false, body: data);
+    }
+
+    if (_chunkedDecoder != null) {
       _readChunked(data);
     } else {
       _readFixedLengthContent(data);
     }
 
-    if (_state == ReaderState.done) {
+    if (_done) {
       var body = _bodyBuffer.toBytes();
       _bodyBuffer.clear();
       return Result(true, body: body);
@@ -78,75 +90,26 @@ class BodyReader {
 
   void _readFixedLengthContent(Uint8List data) {
     if (message.contentLength > 0) {
-      _bodyBuffer.add(data.sublist(_offset));
+      _bodyBuffer.add(data);
     }
 
     if (message.contentLength == -1 || _bodyBuffer.length >= message.contentLength) {
-      _state = ReaderState.done;
+      _done = true;
     }
   }
 
   void _readChunked(Uint8List data) {
-    while (_offset < data.length) {
-      //读取chunk length
-      if (_state == ReaderState.readChunkSize) {
-        _chunkReadableSize = _readChunkSize(data);
-
-        if (_chunkReadableSize == 0) {
-          //chunked编码结束
-          _state = ReaderState.done;
-          break;
-        }
-
-        if (_chunkReadableSize == -1) {
-          continue;
-        }
-        _state = ReaderState.readChunkedContent;
-      }
-
-      //读取chunk内容
-      if (_state == ReaderState.readChunkedContent) {
-        int end = min(data.length, _offset + _chunkReadableSize);
-        _bodyBuffer.add(data.sublist(_offset, end));
-
-        //可读大小
-        _chunkReadableSize -= (end - _offset);
-        _offset = end;
-        if (_chunkReadableSize == 0) {
-          _state = ReaderState.readChunkSize;
-          _offset += 2; //内容结尾\r\n
-        }
-      }
+    final Uint8List payload;
+    try {
+      payload = _chunkedDecoder!.feed(data);
+    } on FormatException catch (e) {
+      throw ParserException(e.message);
     }
-  }
-
-  int _readChunkSize(Uint8List data) {
-    if (_offset >= data.length) {
-      return -1;
+    if (payload.isNotEmpty) {
+      _bodyBuffer.add(payload);
     }
-
-    for (int i = _offset; i < data.length; i++) {
-      /// chunked编码内容结尾\r\n
-      if (data[i] == HttpConstants.lf) {
-        if (i > 0 && data[i - 1] == HttpConstants.cr) {
-          var line = data.sublist(_offset, i - 1);
-          _offset = i + 1;
-          if (line.isEmpty) {
-            return -1;
-          }
-          return hexToInt(String.fromCharCodes(line));
-        }
-
-        //可能上个包是结尾\r 最好做法是缓存上个不完整的包，先临时处理下
-        if (data.length == 1) {
-          _offset = i + 1;
-          return -1;
-        }
-      }
+    if (_chunkedDecoder!.isDone) {
+      _done = true;
     }
-
-    throw Exception('Invalid chunked encoding line: ${String.fromCharCodes(data)}');
   }
 }
-
-enum ReaderState { readFixedLengthContent, readChunked, readChunkSize, readChunkedContent, done }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright 2023 Hongen Wang
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,35 +17,41 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:proxypin/network/bin/server.dart';
+import 'package:proxypin/network/components/manager/request_crypto_manager.dart';
+import 'package:proxypin/network/components/manager/request_breakpoint_manager.dart';
 import 'package:proxypin/network/components/manager/request_map_manager.dart';
 import 'package:proxypin/network/components/manager/request_rewrite_manager.dart';
 import 'package:proxypin/network/components/manager/rewrite_rule.dart';
 import 'package:proxypin/network/components/manager/script_manager.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/util/logger.dart';
-import 'package:proxypin/ui/component/device.dart';
+import 'package:proxypin/network/components/request_breakpoint.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/content/body.dart';
 import 'package:proxypin/ui/content/panel.dart';
+import 'package:proxypin/ui/desktop/debug/breakpoint_executor.dart';
 import 'package:proxypin/ui/desktop/request/request_editor.dart';
 import 'package:proxypin/ui/desktop/setting/request_rewrite.dart';
 import 'package:proxypin/ui/desktop/setting/script.dart';
 import 'package:proxypin/ui/toolbox/aes_page.dart';
 import 'package:proxypin/utils/platform.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../desktop/setting/request_breakpoint.dart';
+import '../desktop/setting/request_crypto.dart';
 import '../desktop/setting/request_map.dart';
 import '../toolbox/cert_hash.dart';
 import '../toolbox/encoder.dart';
 import '../toolbox/js_run.dart';
+import '../toolbox/json_viewer.dart';
 import '../toolbox/qr_code_page.dart';
+import '../toolbox/text_diff.dart';
+import '../toolbox/text_editor.dart';
+import '../toolbox/xml_viewer.dart';
 import '../toolbox/regexp.dart';
 import '../toolbox/stream_code_page.dart';
 import '../toolbox/timestamp.dart';
@@ -54,7 +60,7 @@ import '../toolbox/websocket_request.dart';
 bool isMultiWindow = false;
 
 ///多窗口
-Widget multiWindow(int windowId, Map<dynamic, dynamic> argument) {
+Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
   isMultiWindow = true;
   //请求编辑器
   if (argument['name'] == 'RequestEditor') {
@@ -96,12 +102,40 @@ Widget multiWindow(int windowId, Map<dynamic, dynamic> argument) {
     return futureWidget(
         RequestRewriteManager.instance, (data) => RequestRewriteWidget(windowId: windowId, requestRewrites: data));
   }
+
+  // 请求加密
+  if (argument['name'] == 'RequestCryptoPage') {
+    return futureWidget(RequestCryptoManager.instance, (data) => RequestCryptoPage(windowId: windowId, manager: data));
+  }
+  // 请求映射
   if (argument['name'] == 'RequestMapPage') {
     return RequestMapPage(windowId: windowId);
   }
 
+  // 请求拦截
+  if (argument['name'] == 'RequestBreakpointPage') {
+    return futureWidget(
+        RequestBreakpointManager.instance, (manager) => RequestBreakpointPage(windowId: windowId, manager: manager));
+  }
+
   if (argument['name'] == 'QrCodePage') {
     return QrCodePage(windowId: windowId);
+  }
+
+  if (argument['name'] == 'JsonViewerPage') {
+    return JsonViewerPage(windowId: windowId);
+  }
+
+  if (argument['name'] == 'XmlViewerPage') {
+    return XmlViewerPage(windowId: windowId);
+  }
+
+  if (argument['name'] == 'TextDiffPage') {
+    return TextDiffPage(windowId: windowId);
+  }
+
+  if (argument['name'] == 'TextEditorPage') {
+    return TextEditorPage(windowId: windowId);
   }
 
   if (argument['name'] == 'CertHashPage') {
@@ -120,7 +154,7 @@ Widget multiWindow(int windowId, Map<dynamic, dynamic> argument) {
   }
 
   if (argument['name'] == 'AesPage') {
-    return AesPage();
+    return AesPage(text: argument['text']);
   }
 
   if (argument['name'] == 'StreamCodePage') {
@@ -136,6 +170,16 @@ Widget multiWindow(int windowId, Map<dynamic, dynamic> argument) {
     return WebSocketRequestPage(windowId: windowId);
   }
 
+  if (argument['name'] == 'BreakpointExecutor') {
+    return BreakpointExecutor(
+      windowId: windowId,
+      request: HttpRequest.fromJson(argument['request']),
+      response: argument['response'] == null ? null : HttpResponse.fromJson(argument['response']),
+      isResponse: argument['type'] == 'response',
+      requestId: argument['requestId'],
+    );
+  }
+
   return const SizedBox();
 }
 
@@ -144,7 +188,8 @@ enum Operation {
   update,
   delete,
   enabled,
-  refresh;
+  refresh,
+  reorder;
 
   static Operation of(String name) {
     return values.firstWhere((element) => element.name == name);
@@ -152,20 +197,28 @@ enum Operation {
 }
 
 class MultiWindow {
+  static Function(String widgetName, Map<String, dynamic>? args)? onOpenWindow;
+
   /// 刷新请求重写
   static Future<void> invokeRefreshRewrite(Operation operation,
-      {int? index, RequestRewriteRule? rule, List<RewriteItem>? items, bool? enabled}) async {
-    await DesktopMultiWindow.invokeMethod(0, "refreshRequestRewrite", {
+      {int? index, RequestRewriteRule? rule, List<RewriteItem>? items, bool? enabled, List<int>? order}) async {
+    await DesktopMultiWindow.invokeMainWindowMethod("refreshRequestRewrite", {
       "enabled": enabled,
       "operation": operation.name,
       'index': index,
       'rule': rule?.toJson(),
-      'items': items?.map((e) => e.toJson()).toList()
+      'items': items?.map((e) => e.toJson()).toList(),
+      'order': order
     });
   }
 
   static Future<WindowController> openWindow(String title, String widgetName,
       {Size size = const Size(800, 680), Map<String, dynamic>? args}) async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      onOpenWindow?.call(widgetName, args);
+      return WindowController.fromWindowId('0'); // Dummy controller
+    }
+
     var ratio = 1.0;
     if (Platform.isWindows) {
       ratio = WindowManager.instance.getDevicePixelRatio();
@@ -174,11 +227,13 @@ class MultiWindow {
     final window = await DesktopMultiWindow.createWindow(jsonEncode(
       {'name': widgetName, ...?args},
     ));
-    window.setTitle(title);
-    window
-      ..setFrame(const Offset(50, -10) & Size(size.width * ratio, size.height * ratio))
-      ..center();
-    window.show();
+
+    if (!Platform.isMacOS) {
+      window.setTitle(title);
+    }
+    await window.center();
+    await window.setSize(Size(size.width * ratio, size.height * ratio));
+    await window.show();
 
     return window;
   }
@@ -208,6 +263,15 @@ class MultiWindow {
       case Operation.enabled:
         requestRewrites.enabled = arguments['enabled'];
         break;
+      case Operation.reorder:
+        //order 为新的顺序：每个元素是规则在原列表中的下标
+        var newOrder = (arguments['order'] as List<dynamic>).map((e) => e as int).toList();
+        var oldRules = requestRewrites.rules;
+        var reordered = newOrder.map((i) => oldRules[i]).toList();
+        requestRewrites.rules
+          ..clear()
+          ..addAll(reordered);
+        break;
       default:
         break;
     }
@@ -230,7 +294,7 @@ void registerMethodHandler() {
   }
   _registerHandler = true;
   DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
-    logger.d('${call.method} $fromWindowId ${call.arguments}');
+    logger.d('${call.method} $fromWindowId');
 
     if (call.method == 'getProxyInfo') {
       return ProxyServer.current?.isRunning == true ? {'host': '127.0.0.1', 'port': ProxyServer.current!.port} : null;
@@ -254,26 +318,18 @@ void registerMethodHandler() {
       return 'done';
     }
 
-    if (call.method == 'pickFiles') {
-      var extensions = call.arguments != null ? call.arguments['allowedExtensions'] : null;
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-          type: extensions == null ? FileType.any : FileType.custom,
-          allowedExtensions: extensions == null ? null : List.from(extensions),
-          initialDirectory: "/Downloads");
-      if (result == null || result.files.isEmpty) return null;
-      return result.files.single.path;
+    if (call.method == 'refreshRequestCrypto') {
+      await RequestCryptoManager.instance.then((value) {
+        return value.reloadConfig();
+      });
+      return 'done';
     }
 
-    if (call.method == 'saveFile') {
-      return await FilePicker.platform.saveFile(fileName: call.arguments['fileName']);
-    }
-
-    if (call.method == 'getApplicationSupportDirectory') {
-      return getApplicationSupportDirectory().then((it) => it.path);
-    }
-
-    if (call.method == 'launchUrl') {
-      return launchUrl(Uri.parse(call.arguments));
+    if (call.method == 'refreshRequestBreakpoint') {
+      await RequestBreakpointManager.instance.then((value) {
+        return value.load();
+      });
+      return 'done';
     }
 
     if (call.method == 'registerConsoleLog') {
@@ -281,8 +337,23 @@ void registerMethodHandler() {
       return "done";
     }
 
-    if (call.method == 'deviceId') {
-      return await DeviceUtils.desktopDeviceId();
+    if (call.method == 'resumeRequest') {
+      var request = call.arguments['request'] == null
+          ? null
+          : HttpRequest.fromJson(jsonDecode(jsonEncode(call.arguments['request'])));
+      RequestBreakpointInterceptor.instance.resumeRequest(call.arguments['requestId'], request);
+      return 'done';
+    }
+
+    if (call.method == 'resumeResponse') {
+      var response = call.arguments['response'] == null
+          ? null
+          : HttpResponse.fromJson(jsonDecode(jsonEncode(call.arguments['response'])));
+      if (response != null) {
+        response.requestId = call.arguments['requestId'];
+      }
+      RequestBreakpointInterceptor.instance.resumeResponse(call.arguments['requestId'], response);
+      return 'done';
     }
 
     return 'done';
@@ -304,11 +375,30 @@ Future<void> encodeWindow(EncoderType type, BuildContext context, [String? text]
     {'name': 'EncoderWidget', 'type': type.name, 'text': text},
   ));
   if (!context.mounted) return;
-  window.setTitle(AppLocalizations.of(context)!.encode);
-  window
-    ..setFrame(const Offset(80, 80) & Size(900 * ratio, 600 * ratio))
-    ..center()
-    ..show();
+  await window.setTitle(AppLocalizations.of(context)!.encode);
+  await window.setSize(Size(900 * ratio, 600 * ratio));
+  await window.center();
+  await window.show();
+}
+
+///打开 AES 窗口
+Future<void> openAesWindow(BuildContext context, String text) async {
+  if (Platforms.isMobile()) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (context) => AesPage(text: text)));
+    return;
+  }
+
+  var ratio = 1.0;
+  if (Platform.isWindows) {
+    ratio = WindowManager.instance.getDevicePixelRatio();
+  }
+  final window = await DesktopMultiWindow.createWindow(jsonEncode(
+    {'name': 'AesPage', 'text': text},
+  ));
+  await window.setTitle('AES');
+  await window.setSize(Size(700 * ratio, 672 * ratio));
+  await window.center();
+  await window.show();
 }
 
 Future<void> openScriptConsoleWindow() async {
@@ -319,9 +409,8 @@ Future<void> openScriptConsoleWindow() async {
   final window = await DesktopMultiWindow.createWindow(jsonEncode(
     {'name': 'ScriptConsoleWidget'},
   ));
-  window.setTitle('Script Console');
-  window
-    ..setFrame(const Offset(50, 0) & Size(900 * ratio, 650 * ratio))
-    ..center();
-  window.show();
+  await window.setTitle('Script Console');
+  await window.setSize(Size(900 * ratio, 650 * ratio));
+  await window.center();
+  await window.show();
 }

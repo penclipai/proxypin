@@ -14,27 +14,36 @@
  * limitations under the License.
  */
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/components/manager/hosts_manager.dart';
 import 'package:proxypin/network/components/manager/request_block_manager.dart';
 import 'package:proxypin/network/components/manager/request_rewrite_manager.dart';
+import 'package:proxypin/network/util/system_proxy.dart';
 import 'package:proxypin/storage/histories.dart';
 import 'package:proxypin/ui/component/proxy_port_setting.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/mobile/menu/drawer.dart';
+import 'package:proxypin/ui/mobile/menu/weak_network_tile.dart';
+import 'package:proxypin/ui/mobile/setting/environment.dart';
 import 'package:proxypin/ui/mobile/setting/hosts.dart';
+import 'package:proxypin/ui/mobile/setting/mcp.dart';
 import 'package:proxypin/ui/mobile/setting/preference.dart';
 import 'package:proxypin/ui/mobile/mobile.dart';
 import 'package:proxypin/ui/mobile/request/favorite.dart';
 import 'package:proxypin/ui/mobile/request/history.dart';
 import 'package:proxypin/ui/mobile/setting/request_block.dart';
+import 'package:proxypin/ui/mobile/setting/request_crypto.dart';
 import 'package:proxypin/ui/mobile/setting/request_rewrite.dart';
 import 'package:proxypin/ui/mobile/setting/script.dart';
 import 'package:proxypin/ui/mobile/setting/ssl.dart';
 import 'package:proxypin/ui/mobile/widgets/about.dart';
+import 'package:proxypin/ui/mobile/setting/request_breakpoint.dart';
 
+import '../../../network/components/manager/request_breakpoint_manager.dart';
 import '../../component/widgets.dart';
 import '../setting/proxy.dart';
 import '../setting/request_map.dart';
@@ -144,10 +153,35 @@ class _ConfigPageState extends State<ConfigPage> {
                   onTap: () => navigator(context, MobileRequestMapPage())),
               Divider(height: 0, thickness: 0.3, color: Theme.of(context).dividerColor.withValues(alpha: 0.22)),
               ListTile(
+                  title: Text(localizations.requestCrypto),
+                  leading: Icon(Icons.lock_outline, color: color),
+                  trailing: arrow,
+                  onTap: () => navigator(context, const MobileRequestCryptoPage())),
+              Divider(height: 0, thickness: 0.3, color: Theme.of(context).dividerColor.withValues(alpha: 0.22)),
+              ListTile(
                   title: Text(localizations.script),
                   leading: Icon(Icons.javascript_outlined, color: color),
                   trailing: arrow,
                   onTap: () => navigator(context, const MobileScript())),
+              Divider(height: 0, thickness: 0.3, color: Theme.of(context).dividerColor.withValues(alpha: 0.22)),
+              ListTile(
+                  title: Text(localizations.breakpoint),
+                  leading: Icon(Icons.bug_report_outlined, color: color),
+                  trailing: arrow,
+                  onTap: () async {
+                    var manager = await RequestBreakpointManager.instance;
+                    if (context.mounted) {
+                      navigator(context, MobileRequestBreakpointPage(manager: manager));
+                    }
+                  }),
+              Divider(height: 0, thickness: 0.3, color: Theme.of(context).dividerColor.withValues(alpha: 0.22)),
+              WeakNetworkMenuTile(color: color, trailing: arrow),
+              Divider(height: 0, thickness: 0.3, color: Theme.of(context).dividerColor.withValues(alpha: 0.22)),
+              ListTile(
+                  title: Text(localizations.environmentVariables),
+                  leading: Icon(Icons.public, color: color),
+                  trailing: arrow,
+                  onTap: () => navigator(context, const MobileEnvironmentPage()))
             ]),
             const SizedBox(height: 16)
           ],
@@ -173,8 +207,10 @@ class SettingPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final configuration = proxyServer.configuration;
 
+    var textEditingController = TextEditingController(text: configuration.proxyPassDomains);
+
     AppLocalizations localizations = AppLocalizations.of(context)!;
-    bool isEn = appConfiguration.language?.languageCode == 'en';
+    bool isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
 
     Widget section(List<Widget> tiles) => Card(
           color: Colors.transparent,
@@ -215,9 +251,21 @@ class SettingPage extends StatelessWidget {
               child: Column(children: [
                 PortWidget(
                     proxyServer: proxyServer,
-                    title: '${localizations.proxy}${isEn ? ' ' : ''}${localizations.port}',
+                    title: '${localizations.proxy}${isCN ? '' : ' '}${localizations.port}',
                     textStyle: const TextStyle(fontSize: 16)),
                 Divider(height: 0, thickness: 0.3, color: Theme.of(context).dividerColor.withValues(alpha: 0.22)),
+                if (Platform.isAndroid)
+                  ListTile(
+                      title: Text(localizations.systemProxy),
+                      trailing: SwitchWidget(
+                          value: configuration.enableSystemProxy,
+                          scale: 0.8,
+                          onChanged: (value) {
+                            configuration.enableSystemProxy = value;
+                            proxyServer.configuration.flushConfig();
+                          })),
+                if (Platform.isAndroid)
+                  Divider(height: 0, thickness: 0.3, color: Theme.of(context).dividerColor.withValues(alpha: 0.22)),
                 ListTile(
                     title: const Text("SOCKS5"),
                     trailing: SwitchWidget(
@@ -246,9 +294,55 @@ class SettingPage extends StatelessWidget {
                           context: context,
                           builder: (_) => ExternalProxyDialog(configuration: proxyServer.configuration));
                     }),
+                Divider(height: 0, thickness: 0.3, color: Theme.of(context).dividerColor.withValues(alpha: 0.22)),
+
+                Padding(
+                    padding: const EdgeInsets.only(left: 15),
+                    child: Row(children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(localizations.proxyIgnoreDomain, style: const TextStyle(fontSize: 14)),
+                          const SizedBox(height: 3),
+                          Text(isCN ? "多个使用;分割" : "Use ';' to separate multiple entries",
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                        ],
+                      ),
+                      Padding(
+                          padding: const EdgeInsets.only(left: 35),
+                          child: TextButton(
+                            child: Text(localizations.reset),
+                            onPressed: () {
+                              textEditingController.text = SystemProxy.proxyPassDomains;
+                            },
+                          ))
+                    ])),
+                const SizedBox(height: 5),
+                Padding(
+                    padding: const EdgeInsets.only(left: 15, right: 5),
+                    child: TextField(
+                        textInputAction: TextInputAction.done,
+                        style: const TextStyle(fontSize: 13),
+                        controller: textEditingController,
+                        onSubmitted: (_) {
+                          configuration.proxyPassDomains = textEditingController.text;
+                          proxyServer.configuration.flushConfig();
+                        },
+                        decoration: const InputDecoration(
+                          contentPadding: EdgeInsets.all(10),
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLines: 5,
+                        minLines: 1)),
+                // const SizedBox(height: 10),
               ])),
           const SizedBox(height: 12),
           section([
+            ListTile(
+                title: Text(localizations.mcpService),
+                trailing: const Icon(Icons.keyboard_arrow_right),
+                onTap: () => navigator(context, MobileMcpSetting(proxyServer: proxyServer))),
+            Divider(height: 0, thickness: 0.3, color: Theme.of(context).dividerColor.withValues(alpha: 0.22)),
             ListTile(
                 title: Text(localizations.setting),
                 trailing: const Icon(Icons.keyboard_arrow_right),

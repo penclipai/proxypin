@@ -11,9 +11,10 @@ and easy to use.
 * Domain name filtering: Only intercept the traffic you need, and do not intercept other traffic to avoid interference with other applications.
 * Search: Search requests according to keywords, response types and other conditions
 * Script: Support writing JavaScript scripts to process requests or responses.
-* Request rewrite: Support redirection, support replacement of request or response message, and can also modify request or response according to the increase.
-* Request mapping: Do not request remote services, use local configuration or scripts for response
-* Request blocking: Support blocking requests according to URL, and do not send requests to the server.
+* Request Rewrite: Support redirection, support replacement of request or response message, and can also modify request or response according to the increase.
+* Request Mapping: Do not request remote services, use local configuration or scripts for response
+* Request Decryption: Configure AES decryption key to automatically decrypt HTTP message body
+* Request Blocking: Support blocking requests according to URL, and do not send requests to the server.
 * History: Automatically save the captured traffic data for easy backtracking and viewing. Support HAR format export and import.
 * Others: Favorites, toolbox, common encoding tools, as well as QR codes, regular expressions, etc.
 
@@ -43,3 +44,7 @@ TG: https://t.me/proxypin_en
 **We will continue to improve the features and experience, as well as optimize the UI.**
 
 <img alt="image"  width="580px" height="420px"  src="https://github.com/user-attachments/assets/6c1345ab-c95c-415d-ac59-470c764b59a2">.<img alt="image"  height="500px" src="https://github.com/user-attachments/assets/3c5572b0-a9e5-497c-8b42-f935e836c164">
+
+
+### Powered by
+[![JetBrains logo.](https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg)](https://jb.gg/OpenSource)

@@ -15,7 +15,6 @@
  */
 
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:proxypin/network/channel/host_port.dart';
 import 'package:proxypin/network/http/content_type.dart';
@@ -23,6 +22,7 @@ import 'package:proxypin/network/http/websocket.dart';
 import 'package:proxypin/network/util/compress.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/network/util/process_info.dart';
+import 'package:proxypin/network/util/random.dart';
 
 import 'http_headers.dart';
 
@@ -38,6 +38,10 @@ abstract class HttpMessage {
     "text/css": ContentType.css,
     "font-woff": ContentType.font,
     "text/html": ContentType.html,
+    "application/xhtml+xml": ContentType.html,
+    "+xml": ContentType.xml,
+    "application/xml": ContentType.xml,
+    "text/xml": ContentType.xml,
     "text/plain": ContentType.text,
     "application/x-www-form-urlencoded": ContentType.formUrl,
     "form-data": ContentType.formData,
@@ -53,6 +57,8 @@ abstract class HttpMessage {
 
   int get contentLength => headers.contentLength;
 
+  String? get requestUrl;
+
   //报文大小
   int? packageSize;
 
@@ -62,8 +68,13 @@ abstract class HttpMessage {
   String? remoteHost;
   int? remotePort;
 
-  String requestId = (DateTime.now().millisecondsSinceEpoch + Random().nextInt(999999)).toRadixString(36);
+  String requestId = (DateTime.now().millisecondsSinceEpoch).toRadixString(36) + RandomUtil.randomString(8); //请求id
   int? streamId; // http2 streamId
+
+  /// 大 body 流式转发模式：为 true 时 encoder 只输出 headers，
+  /// body 字节由上层通过 raw / forward 透传，避免累积到内存。
+  bool streamingBody = false;
+
   HttpMessage(this.protocolVersion);
 
   //json序列化
@@ -123,12 +134,13 @@ abstract class HttpMessage {
     charset ??= this.charset;
     try {
       List<int> rawBody = body!;
-      if (headers.contentEncoding == 'br') {
-        rawBody = brDecode(body!);
-      }
 
       if (headers.isGzip) {
         rawBody = gzipDecode(body!);
+      } else if (headers.contentEncoding == 'br') {
+        rawBody = brDecode(body!);
+      } else if (headers.contentEncoding == 'deflate') {
+        rawBody = zlibDecode(body!);
       }
 
       if (charset == 'utf-8' || charset == 'utf8') {
@@ -190,6 +202,10 @@ class HttpRequest extends HttpMessage {
   HttpRequest(this.method, this._uri, {String protocolVersion = "HTTP/1.1"}) : super(protocolVersion);
 
   String? remoteDomain() {
+    if (protocolVersion == 'MQTT') {
+      final target = Uri.tryParse(uri);
+      return target == null ? null : 'mqtts://${target.host}:${target.port}';
+    }
     if (hostAndPort == null && HostAndPort.startsWithScheme(uri)) {
       try {
         var uri = Uri.parse(this.uri);
@@ -202,7 +218,9 @@ class HttpRequest extends HttpMessage {
     return hostAndPort?.domain;
   }
 
+  @override
   String get requestUrl {
+    if (protocolVersion == 'MQTT') return uri;
     if (HostAndPort.startsWithScheme(uri)) {
       return uri;
     }
@@ -222,6 +240,7 @@ class HttpRequest extends HttpMessage {
       _requestUri ??= Uri.parse(requestUrl);
       return _requestUri;
     } catch (e) {
+      logger.w('parse uri error $requestUrl  ${hostAndPort?.scheme} ${hostAndPort?.host}: $e');
       return null;
     }
   }
@@ -236,6 +255,64 @@ class HttpRequest extends HttpMessage {
   String get pathAndQuery => '${requestUri?.path}${requestUri?.hasQuery == true ? '?${requestUri?.query}' : ''}';
 
   Map<String, String> get queries => requestUri?.queryParameters ?? {};
+
+  /// GraphQL operationName，懒解析并缓存
+  String? get graphqlOperationName {
+    _parseGraphql();
+    return attributes['_graphqlOperationName'] as String?;
+  }
+
+  /// GraphQL 操作类型：query / mutation / subscription，懒解析并缓存
+  String? get graphqlOperationType {
+    _parseGraphql();
+    return attributes['_graphqlOperationType'] as String?;
+  }
+
+  /// 解析 GraphQL 请求体，提取 operationName 与操作类型，结果缓存到 attributes
+  void _parseGraphql() {
+    if (attributes.containsKey('_graphqlOperationName')) {
+      return;
+    }
+
+    String? name;
+    String? type;
+    try {
+      if (body != null && body!.isNotEmpty) {
+        // 兼容 application/json、application/graphql、application/graphql+json 等
+        var isGraphqlContentType = contentType == ContentType.json || headers.contentType.contains('graphql');
+        if (isGraphqlContentType) {
+          var bodyStr = bodyAsString;
+          if (bodyStr.startsWith('{')) {
+            var json = jsonDecode(bodyStr);
+            if (json is Map) {
+              if (json['operationName'] is String && (json['operationName'] as String).isNotEmpty) {
+                name = json['operationName'] as String;
+              }
+              if (json['query'] is String) {
+                type = _parseGraphqlOperationType(json['query'] as String);
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    attributes['_graphqlOperationName'] = name;
+    attributes['_graphqlOperationType'] = type;
+  }
+
+  /// 从 GraphQL query 文本判断操作类型；匿名简写 `{ ... }` 视为 query
+  static String? _parseGraphqlOperationType(String query) {
+    var trimmed = query.trimLeft();
+    var match = RegExp(r'^(query|mutation|subscription)\b').firstMatch(trimmed);
+    if (match != null) {
+      return match.group(1);
+    }
+    if (trimmed.startsWith('{')) {
+      return 'query';
+    }
+    return null;
+  }
 
   ///获取消息体编码
   @override
@@ -253,6 +330,7 @@ class HttpRequest extends HttpMessage {
     request.hostAndPort ??= hostAndPort;
     request.streamId = streamId;
     request.body = body;
+    request.messages = messages;
     return request;
   }
 
@@ -260,6 +338,7 @@ class HttpRequest extends HttpMessage {
   Map<String, dynamic> toJson() {
     return {
       '_class': 'HttpRequest',
+      '_id': requestId,
       'uri': requestUrl,
       'method': method.name,
       'protocolVersion': protocolVersion,
@@ -267,17 +346,26 @@ class HttpRequest extends HttpMessage {
       'headers': headers.toJson(),
       'body': body == null ? null : String.fromCharCodes(body!),
       'requestTime': requestTime.millisecondsSinceEpoch,
+      'messages': messages.map((e) => e.toJson()).toList(),
     };
   }
 
   factory HttpRequest.fromJson(Map<String, dynamic> json) {
     var request = HttpRequest(HttpMethod.valueOf(json['method']), json['uri'],
         protocolVersion: json['protocolVersion'] ?? "HTTP/1.1");
-    
+
+    request.requestId = json['_id'] ?? request.requestId;
     request.headers.addAll(HttpHeaders.fromJson(json['headers']));
     request.body = json['body']?.toString().codeUnits;
     if (json['requestTime'] != null) {
       request.requestTime = DateTime.fromMillisecondsSinceEpoch(json['requestTime']);
+    }
+
+    if (json['messages'] is List) {
+      request.messages = (json['messages'] as List)
+          .whereType<Map>()
+          .map((e) => WebSocketFrame.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
     }
     request.packageSize = json['packageSize'];
     return request;
@@ -294,8 +382,22 @@ class HttpResponse extends HttpMessage {
   HttpStatus status;
   DateTime responseTime = DateTime.now();
   HttpRequest? request;
+  String? _requestUrl;
+
+  @override
+  String? get requestUrl => request?.requestUrl ?? _requestUrl;
 
   HttpResponse(this.status, {String protocolVersion = "HTTP/1.1"}) : super(protocolVersion);
+
+  /// 复制响应
+  HttpResponse copy() {
+    var response = HttpResponse(status, protocolVersion: protocolVersion);
+    response.headers.addAll(headers);
+    response.body = body;
+    response.request = request;
+    response.messages = messages;
+    return response;
+  }
 
   String costTime() {
     if (request == null) {
@@ -317,7 +419,14 @@ class HttpResponse extends HttpMessage {
     if (json['responseTime'] != null) {
       httpResponse.responseTime = DateTime.fromMillisecondsSinceEpoch(json['responseTime']);
     }
+    if (json['messages'] is List) {
+      httpResponse.messages = (json['messages'] as List)
+          .where((e) => e is Map)
+          .map((e) => WebSocketFrame.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
     httpResponse.packageSize = json['packageSize'];
+    httpResponse._requestUrl = json['requestUrl'];
     return httpResponse;
   }
 
@@ -325,6 +434,7 @@ class HttpResponse extends HttpMessage {
   Map<String, dynamic> toJson() {
     return {
       '_class': 'HttpResponse',
+      'requestUrl': request?.requestUrl ?? _requestUrl,
       'protocolVersion': protocolVersion,
       'packageSize': packageSize,
       'status': {
@@ -334,6 +444,7 @@ class HttpResponse extends HttpMessage {
       'headers': headers.toJson(),
       'body': body == null ? null : String.fromCharCodes(body!),
       'responseTime': responseTime.millisecondsSinceEpoch,
+      'messages': messages.map((e) => e.toJson()).toList(),
     };
   }
 
@@ -345,6 +456,7 @@ class HttpResponse extends HttpMessage {
 
 ///HTTP请求方法。
 enum HttpMethod {
+  mqtt("MQTT"),
   get("GET"),
   post("POST"),
   put("PUT"),
@@ -372,7 +484,9 @@ enum HttpMethod {
   }
 
   static List<HttpMethod> methods() {
-    return values.where((method) => method != HttpMethod.propfind && method != HttpMethod.report).toList();
+    return values
+        .where((method) => method != HttpMethod.propfind && method != HttpMethod.report && method != HttpMethod.mqtt)
+        .toList();
   }
 }
 

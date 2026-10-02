@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
@@ -22,19 +22,20 @@ import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/ui/component/state_component.dart';
 import 'package:proxypin/ui/component/utils.dart';
-import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/web_socket.dart';
+import 'package:proxypin/ui/content/mqtt.dart';
 import 'package:proxypin/utils/lang.dart';
 import 'package:proxypin/utils/platform.dart';
 
 import 'body.dart';
+import 'headers.dart';
 import 'menu.dart';
 
 ///网络请求详情页
 ///@Author: wanghongen
 class NetworkTabController extends StatefulWidget {
   static GlobalKey<NetworkTabState>? currentKey;
-  final int? windowId;
+  final String? windowId;
   final ProxyServer? proxyServer;
   final ValueWrap<HttpRequest> request = ValueWrap();
   final ValueWrap<HttpResponse> response = ValueWrap();
@@ -66,6 +67,19 @@ class NetworkTabController extends StatefulWidget {
     state.currentState?.changeState();
   }
 
+  ///更新当前详情请求的响应，请求在详情页打开期间完成时刷新响应内容
+  void updateResponse(HttpResponse? response) {
+    var currentRequest = request.get();
+    if (response?.request == null || currentRequest == null) {
+      return;
+    }
+    if (currentRequest.requestId != response!.request!.requestId) {
+      return;
+    }
+    this.response.set(response);
+    changeState();
+  }
+
   @override
   State<StatefulWidget> createState() {
     return NetworkTabState();
@@ -74,13 +88,9 @@ class NetworkTabController extends StatefulWidget {
   static NetworkTabController? get current => currentKey?.currentWidget as NetworkTabController?;
 }
 
-class NetworkTabState extends State<NetworkTabController> with SingleTickerProviderStateMixin {
-  final tabs = [
-    'General',
-    'Request',
-    'Response',
-    'Cookies',
-  ];
+class NetworkTabState extends State<NetworkTabController> with TickerProviderStateMixin {
+  late List<String> tabs;
+  late bool _mqttTabs;
 
   final TextStyle textStyle = const TextStyle(fontSize: 14);
   late TabController _tabController;
@@ -89,14 +99,17 @@ class NetworkTabState extends State<NetworkTabController> with SingleTickerProvi
   final GlobalKey<HttpBodyState> responseHttpBodyKey = GlobalKey<HttpBodyState>();
 
   void changeState() {
+    final mqtt = widget.request.get()?.protocolVersion == 'MQTT';
+    if (mqtt != _mqttTabs) {
+      _tabController.dispose();
+      _configureTabs(mqtt);
+    }
     setState(() {});
   }
 
-  AppLocalizations get localizations => AppLocalizations.of(context)!;
-
-  @override
-  void initState() {
-    super.initState();
+  void _configureTabs(bool mqtt) {
+    _mqttTabs = mqtt;
+    tabs = mqtt ? ['General', 'MQTT'] : ['General', 'Request', 'Response', 'Cookies'];
     _tabController = TabController(length: tabs.length, vsync: this);
     _tabController.addListener(() {
       if (_tabController.index != 1) {
@@ -106,6 +119,14 @@ class NetworkTabState extends State<NetworkTabController> with SingleTickerProvi
         responseHttpBodyKey.currentState?.hideSearchOverlay();
       }
     });
+  }
+
+  AppLocalizations get localizations => AppLocalizations.of(context)!;
+
+  @override
+  void initState() {
+    super.initState();
+    _configureTabs(widget.request.get()?.protocolVersion == 'MQTT');
 
     if (widget.windowId != null) {
       HardwareKeyboard.instance.addHandler(onKeyEvent);
@@ -132,10 +153,13 @@ class NetworkTabState extends State<NetworkTabController> with SingleTickerProvi
 
   @override
   Widget build(BuildContext context) {
+    bool isMqtt = widget.request.get()?.protocolVersion == 'MQTT';
     bool isWebSocket = widget.request.get()?.isWebSocket == true;
     bool isSse = widget.response.get()?.headers.contentType.toLowerCase().startsWith('text/event-stream') == true;
     bool isStreamMessages = isWebSocket || isSse;
-    if (isSse) {
+    if (isMqtt) {
+      tabs[tabs.length - 1] = 'MQTT';
+    } else if (isSse) {
       tabs[tabs.length - 1] = "SSE";
     } else if (isWebSocket) {
       tabs[tabs.length - 1] = "WebSocket";
@@ -156,6 +180,7 @@ class NetworkTabState extends State<NetworkTabController> with SingleTickerProvi
         : AppBar(
             title: widget.title,
             bottom: tabBar,
+            centerTitle: true,
             actions: [
               ShareWidget(
                   proxyServer: widget.proxyServer, request: widget.request.get(), response: widget.response.get()),
@@ -173,15 +198,20 @@ class NetworkTabState extends State<NetworkTabController> with SingleTickerProvi
           child: TabBarView(
             physics: Platforms.isDesktop() ? const NeverScrollableScrollPhysics() : null, //桌面禁止滑动
             controller: _tabController,
-            children: [
-              SelectionArea(child: General(widget.request, widget.response)),
-              KeepAliveWrapper(child: request()),
-              KeepAliveWrapper(child: response()),
-              SelectionArea(
-                  child: isStreamMessages
-                      ? Websocket(widget.request, widget.response)
-                      : Cookies(widget.request, widget.response)),
-            ],
+            children: isMqtt
+                ? [
+                    SelectionArea(child: General(widget.request, widget.response)),
+                    SelectionArea(child: MqttMessages(widget.request)),
+                  ]
+                : [
+                    SelectionArea(child: General(widget.request, widget.response)),
+                    KeepAliveWrapper(child: request()),
+                    KeepAliveWrapper(child: response()),
+                    SelectionArea(
+                        child: isStreamMessages
+                            ? Websocket(widget.request, widget.response)
+                            : Cookies(widget.request, widget.response)),
+                  ],
           )),
     );
   }
@@ -199,8 +229,11 @@ class NetworkTabState extends State<NetworkTabController> with SingleTickerProvi
 
     return SingleChildScrollView(
         controller: scrollController,
-        child:
-            Column(children: [RowWidget("Path", path), ...message(widget.request.get(), "Request", scrollController)]));
+        child: Column(children: [
+          RowWidget("Path", path),
+          RequestParams(widget.request),
+          ...message(widget.request.get(), "Request", scrollController)
+        ]));
   }
 
   Widget response() {
@@ -218,46 +251,59 @@ class NetworkTabState extends State<NetworkTabController> with SingleTickerProvi
   }
 
   List<Widget> message(HttpMessage? message, String type, ScrollController scrollController) {
-    var headers = <Widget>[];
-    message?.headers.forEach((name, values) {
-      for (var v in values) {
-        const nameStyle = TextStyle(fontWeight: FontWeight.w500, color: Colors.deepOrangeAccent, fontSize: 14);
-        headers.add(Row(children: [
-          SelectableText(name, contextMenuBuilder: contextMenu, style: nameStyle),
-          const Text(": ", style: nameStyle),
-          if (Platforms.isDesktop()) SizedBox(width: 5),
-          Expanded(
-              child: SelectableText(v, style: textStyle, contextMenuBuilder: contextMenu, maxLines: 8, minLines: 1)),
-        ]));
-        headers.add(const Divider(thickness: 0.1));
-      }
-    });
-
     Widget bodyWidgets = HttpBodyWidget(
         key: type == "Request" ? requestHttpBodyKey : responseHttpBodyKey,
         hideRequestRewrite: widget.windowId != null,
         httpMessage: message,
         scrollController: scrollController);
 
-    Widget headerWidget = ExpansionTile(
-        tilePadding: const EdgeInsets.only(left: 0),
-        title: Text("$type Headers", style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
-        initiallyExpanded: AppConfiguration.current?.headerExpanded ?? true,
-        shape: const Border(),
-        children: headers);
-
-    return [headerWidget, bodyWidgets];
+    return [HeadersWidget(title: type, message: message, valueTextStyle: textStyle), bodyWidgets];
   }
 }
 
-Widget expansionTile(String title, List<Widget> content) {
+Widget expansionTile(String title, List<Widget> content,
+    {bool initiallyExpanded = true, ValueChanged<bool>? onExpansionChanged}) {
   return ExpansionTile(
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
       tilePadding: const EdgeInsets.only(left: 0),
       expandedAlignment: Alignment.topLeft,
-      initiallyExpanded: true,
+      initiallyExpanded: initiallyExpanded,
+      onExpansionChanged: onExpansionChanged,
       shape: const Border(),
       children: content);
+}
+
+class RequestParams extends StatelessWidget {
+  static bool initiallyExpanded = false;
+
+  final ValueWrap<HttpRequest> request;
+
+  const RequestParams(this.request, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    var request = this.request.get();
+    if (request == null) {
+      return const SizedBox();
+    }
+    var params = request.requestUri?.queryParametersAll;
+    if (params == null || params.isEmpty) {
+      return const SizedBox();
+    }
+    var content = <Widget>[];
+    params.forEach((name, values) {
+      for (var val in values) {
+        content.add(RowWidget(name, val));
+        content.add(const Divider(thickness: 0.1, height: 10));
+      }
+    });
+
+    return expansionTile("Request Params", content, initiallyExpanded: initiallyExpanded,
+        onExpansionChanged: (expanded) {
+      //保存展开状态
+      initiallyExpanded = expanded;
+    });
+  }
 }
 
 class General extends StatelessWidget {
@@ -278,35 +324,51 @@ class General extends StatelessWidget {
     try {
       requestUrl = Uri.decodeFull(request.requestUrl);
     } catch (_) {}
+    if (request.protocolVersion == 'MQTT') {
+      return ListView(children: [
+        expansionTile('General', [
+          const SizedBox(height: 10),
+          RowWidget('Connection', requestUrl),
+          const SizedBox(height: 15),
+          RowWidget('Protocol', 'MQTT over TLS'),
+          const SizedBox(height: 15),
+          RowWidget('Packets', request.messages.length.toString()),
+          const SizedBox(height: 15),
+          RowWidget('Start Time', request.requestTime.formatMillisecond()),
+          const SizedBox(height: 15),
+          if (request.processInfo != null) RowWidget('App', request.processInfo!.name),
+        ])
+      ]);
+    }
     var content = [
       const SizedBox(height: 10),
       RowWidget("Request URL", requestUrl),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Request Method", request.method.name),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Protocol", request.protocolVersion),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Status Code", response?.status.toString()),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Remote Address",
           '${response?.remoteHost ?? ''}${response?.remotePort == null ? '' : ':${response?.remotePort}'}'),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Request Time", request.requestTime.formatMillisecond()),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Duration", response?.costTime()),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Request Content-Type", request.headers.contentType),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Response Content-Type", response?.headers.contentType),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Request Package", getPackage(request.packageSize)),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       RowWidget("Response Package", getPackage(response?.packageSize)),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
     ];
     if (request.processInfo != null) {
       content.add(RowWidget("App", request.processInfo!.name));
-      content.add(const SizedBox(height: 20));
+      content.add(const SizedBox(height: 15));
     }
 
     return ListView(children: [expansionTile("General", content)]);
@@ -327,7 +389,7 @@ class Cookies extends StatelessWidget {
     var responseCookie = response.get()?.headers.getList("Set-Cookie")?.expand((e) => _cookieWidget(e)!);
     return ListView(children: [
       requestCookie == null ? const SizedBox() : expansionTile("Request Cookies", requestCookie.toList()),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       responseCookie == null ? const SizedBox() : expansionTile("Response Cookies", responseCookie.toList()),
     ]);
   }
@@ -337,7 +399,7 @@ class Cookies extends StatelessWidget {
 
     cookie?.split(";").map((e) => Strings.splitFirst(e, "=")).where((element) => element != null).forEach((e) {
       headers.add(RowWidget(e!.key.trim(), e.value));
-      headers.add(const Divider(thickness: 0.1));
+      headers.add(const Divider(thickness: 0.1, height: 10));
     });
 
     return headers;

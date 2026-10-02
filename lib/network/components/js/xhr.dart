@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter_js/javascript_runtime.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/util/file_read.dart';
 import 'package:proxypin/network/util/logger.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:proxypin/utils/platform.dart';
 
 /*
@@ -259,7 +259,7 @@ extension JavascriptRuntimeXhrExtension on JavascriptRuntime {
     var httpClient = HttpClient();
     String proxy;
     if (Platforms.isDesktop()) {
-      Map? proxyResult = await DesktopMultiWindow.invokeMethod(0, 'getProxyInfo');
+      Map? proxyResult = await DesktopMultiWindow.invokeMainWindowMethod('getProxyInfo');
       if (proxyResult == null) {
         return http.Client();
       }
@@ -370,7 +370,7 @@ extension JavascriptRuntimeXhrExtension on JavascriptRuntime {
         // send back to the javascript environment the
         // response for the http pending callback
         var jsResult = evaluate(
-          "globalThis.xhrRequests[${pendingCall.idRequest}].callback($responseInfo, $safeResponseText, $error);",
+          "if (globalThis.xhrRequests[${pendingCall.idRequest}]) { globalThis.xhrRequests[${pendingCall.idRequest}].callback($responseInfo, $safeResponseText, $error); }",
         );
         if (jsResult.isError) {
           logger.e('jsResult error url:${pendingCall.url}, ${jsResult.stringResult}');
@@ -458,12 +458,7 @@ class XhtmlHttpResponseInfo {
   }
 
   Map<String, Object?> toJson() {
-    return {
-      "statusCode": statusCode,
-      "statusText": statusText,
-      "body": body,
-      "responseHeaders": responseHeaders
-    };
+    return {"statusCode": statusCode, "statusText": statusText, "body": body, "responseHeaders": responseHeaders};
   }
 }
 

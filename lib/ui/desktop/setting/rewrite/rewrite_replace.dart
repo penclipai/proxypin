@@ -14,23 +14,27 @@
  * limitations under the License.
  */
 
-import 'dart:io';
+import 'package:re_highlight/languages/json.dart';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:code_forge/code_forge.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:re_highlight/styles/atom-one-dark.dart';
+import 'package:re_highlight/styles/atom-one-light.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/components/manager/rewrite_rule.dart';
 import 'package:proxypin/ui/component/state_component.dart';
 import 'package:proxypin/ui/component/widgets.dart';
 import 'package:proxypin/utils/lang.dart';
 
+import '../../../component/search/finder.dart';
+
 /// 重写替换
 /// @author wanghongen
 /// 2023/10/8
 class DesktopRewriteReplace extends StatefulWidget {
-  final int? windowId;
+  final String? windowId;
   final RuleType ruleType;
   final List<RewriteItem>? items;
 
@@ -42,7 +46,8 @@ class DesktopRewriteReplace extends StatefulWidget {
 
 class RewriteReplaceState extends State<DesktopRewriteReplace> {
   final _headerKey = GlobalKey<HeadersState>();
-  final bodyTextController = TextEditingController();
+  late CodeForgeController bodyTextController;
+  VoidCallback? _bodyListener;
   late RuleType ruleType;
   List<RewriteItem> items = [];
 
@@ -51,18 +56,23 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
   @override
   initState() {
     super.initState();
+    bodyTextController = CodeForgeController();
     ruleType = widget.ruleType;
     initItems(widget.ruleType, widget.items);
   }
 
   @override
   dispose() {
+    if (_bodyListener != null) {
+      bodyTextController.removeListener(_bodyListener!);
+      _bodyListener = null;
+    }
     bodyTextController.dispose();
     super.dispose();
   }
 
   ///初始化重写项
-  initItems(RuleType ruleType, List<RewriteItem>? items) {
+  void initItems(RuleType ruleType, List<RewriteItem>? items) {
     this.items.clear();
     this.ruleType = ruleType;
     if (ruleType == RuleType.redirect) {
@@ -175,7 +185,7 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
         SizedBox(
             width: 90,
             child: DropdownButtonFormField<String>(
-                value: rewriteItem.bodyType ?? ReplaceBodyType.text.name,
+                initialValue: rewriteItem.bodyType ?? ReplaceBodyType.text.name,
                 focusColor: Colors.transparent,
                 itemHeight: 48,
                 decoration:
@@ -218,14 +228,39 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
       if (rewriteItem.bodyType == ReplaceBodyType.file.name)
         fileBodyEdit(rewriteItem)
       else
-        TextFormField(
-            controller: bodyTextController,
-            style: const TextStyle(fontSize: 14),
-            maxLines: 12,
-            decoration: decoration(localizations.replaceBodyWith,
-                hintText: '${localizations.example} {"code":"200","data":{}}'),
-            onChanged: (val) => rewriteItem.body = val)
+        Container(
+            height: 280,
+            decoration: BoxDecoration(border: Border.all(color: Colors.black12)),
+            child: Builder(builder: (context) {
+              // ensure we update rewriteItem when editor text changes; remove previous listener to avoid duplicates
+              if (_bodyListener != null) {
+                bodyTextController.removeListener(_bodyListener!);
+                _bodyListener = null;
+              }
+              _bodyListener = () {
+                rewriteItem.body = bodyTextController.text;
+              };
+              bodyTextController.addListener(_bodyListener!);
+
+              return CodeForge(
+                controller: bodyTextController,
+                lineWrap: true,
+                language: isJsonText() ? langJson : null,
+                enableGuideLines: false,
+                selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
+                editorTheme: Theme.brightnessOf(context) == Brightness.dark ? atomOneDarkTheme : atomOneLightTheme,
+                textStyle: const TextStyle(fontSize: 14),
+                finderBuilder: (c, controller) => FindPanelView(controller: controller),
+              );
+            }))
     ]);
+  }
+
+  //判断是否是json格式
+  bool isJsonText() {
+    var bodyString = bodyTextController.text;
+    return (bodyString.startsWith('{') && bodyString.endsWith('}') ||
+        bodyString.startsWith('[') && bodyString.endsWith(']'));
   }
 
   Widget fileBodyEdit(RewriteItem item) {
@@ -242,14 +277,8 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
       const SizedBox(width: 10),
       FilledButton(
           onPressed: () async {
-            String? path;
-            if (Platform.isMacOS) {
-              path = await DesktopMultiWindow.invokeMethod(0, "pickFiles");
-              if (widget.windowId != null) WindowController.fromWindowId(widget.windowId!).show();
-            } else {
-              FilePickerResult? result = await FilePicker.platform.pickFiles();
-              path = result?.files.single.path;
-            }
+            final picked = await FilePicker.pickFile();
+            final path = picked?.path;
 
             if (path == null) {
               return;
@@ -305,7 +334,7 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
           SizedBox(
               width: 120,
               child: DropdownButtonFormField<String>(
-                  value: rewriteItem.method?.name ?? 'GET',
+                  initialValue: rewriteItem.method?.name ?? 'GET',
                   focusColor: Colors.transparent,
                   itemHeight: 48,
                   decoration: const InputDecoration(
@@ -436,7 +465,7 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
 
 ///请求头
 class Headers extends StatefulWidget {
-  final Map<String, String>? headers;
+  final Map<String, dynamic>? headers;
 
   const Headers({super.key, this.headers});
 
@@ -447,7 +476,7 @@ class Headers extends StatefulWidget {
 }
 
 class HeadersState extends State<Headers> with AutomaticKeepAliveClientMixin {
-  final Map<TextEditingController, TextEditingController> _headers = {};
+  final List<MapEntry<TextEditingController, TextEditingController>> _headers = [];
 
   @override
   bool get wantKeepAlive => true;
@@ -464,22 +493,36 @@ class HeadersState extends State<Headers> with AutomaticKeepAliveClientMixin {
     setHeaders(widget.headers);
   }
 
-  setHeaders(Map<String, String>? headers) {
+  void setHeaders(Map<String, dynamic>? headers) {
     _clear();
     headers?.forEach((name, value) {
-      _headers[TextEditingController(text: name)] = TextEditingController(text: value);
+      if (value is List) {
+        for (var v in value) {
+          _headers.add(MapEntry(TextEditingController(text: name), TextEditingController(text: v.toString())));
+        }
+      } else {
+        _headers.add(MapEntry(TextEditingController(text: name), TextEditingController(text: value.toString())));
+      }
     });
   }
 
-  ///获取所有请求头
-  Map<String, String> getHeaders() {
-    var headers = <String, String>{};
-    _headers.forEach((name, value) {
-      if (name.text.isEmpty) {
-        return;
+  ///获取所有请求头。多值 header(如 Set-Cookie)以数组形式返回。
+  Map<String, dynamic> getHeaders() {
+    var headers = <String, dynamic>{};
+    for (var entry in _headers) {
+      var name = entry.key.text;
+      if (name.isEmpty) {
+        continue;
       }
-      headers[name.text] = value.text;
-    });
+      var existing = headers[name];
+      if (existing == null) {
+        headers[name] = entry.value.text;
+      } else if (existing is List) {
+        existing.add(entry.value.text);
+      } else {
+        headers[name] = [existing, entry.value.text];
+      }
+    }
     return headers;
   }
 
@@ -489,11 +532,11 @@ class HeadersState extends State<Headers> with AutomaticKeepAliveClientMixin {
     super.dispose();
   }
 
-  _clear() {
-    _headers.forEach((key, value) {
-      key.dispose();
-      value.dispose();
-    });
+  void _clear() {
+    for (var entry in _headers) {
+      entry.key.dispose();
+      entry.value.dispose();
+    }
     _headers.clear();
   }
 
@@ -517,7 +560,7 @@ class HeadersState extends State<Headers> with AutomaticKeepAliveClientMixin {
         child: Text("${localizations.add}Header", textAlign: TextAlign.center),
         onPressed: () {
           setState(() {
-            _headers[TextEditingController()] = TextEditingController();
+            _headers.add(MapEntry(TextEditingController(), TextEditingController()));
           });
         },
       ),
@@ -527,7 +570,9 @@ class HeadersState extends State<Headers> with AutomaticKeepAliveClientMixin {
   List<Widget> _buildRows() {
     List<Widget> list = [];
 
-    _headers.forEach((key, val) {
+    for (var entry in _headers) {
+      var key = entry.key;
+      var val = entry.value;
       list.add(_row(
           _cell(key, isKey: true),
           _cell(val),
@@ -536,11 +581,11 @@ class HeadersState extends State<Headers> with AutomaticKeepAliveClientMixin {
               child: InkWell(
                   onTap: () {
                     setState(() {
-                      _headers.remove(key);
+                      _headers.remove(entry);
                     });
                   },
                   child: const Icon(Icons.remove_circle_outline, size: 16)))));
-    });
+    }
 
     return list;
   }

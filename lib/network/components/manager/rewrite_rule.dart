@@ -15,6 +15,7 @@
  */
 
 import 'package:proxypin/network/http/http.dart';
+import 'package:proxypin/network/util/url_pattern.dart';
 import 'package:proxypin/utils/lang.dart';
 
 ///重写规则
@@ -51,7 +52,7 @@ class RequestRewriteRule {
   HttpMethod? method;
 
   RequestRewriteRule({this.enabled = true, this.name, required this.url, required this.type, this.rewritePath, this.method})
-      : _urlReg = RegExp(url.replaceAll("*", ".*").replaceFirst('?', '\\?'));
+      : _urlReg = UrlPattern.toRegExp(url);
 
   bool match(String url, {RuleType? type, HttpMethod? method}) {
     if (!enabled) return false;
@@ -88,7 +89,7 @@ class RequestRewriteRule {
   }
 
   void updatePathReg() {
-    _urlReg = RegExp(url.replaceAll("*", ".*").replaceFirst('?', '\\?'));
+    _urlReg = UrlPattern.toRegExp(url);
   }
 
   Map<String, dynamic> toJson() {
@@ -157,6 +158,10 @@ class RewriteItem {
 
   set key(String? key) => values['key'] = key;
 
+  bool get useRegex => values['useRegex'] != false;
+
+  set useRegex(bool useRegex) => values['useRegex'] = useRegex;
+
   String? get value => values['value'];
 
   set value(String? value) => values['value'] = value;
@@ -188,9 +193,9 @@ class RewriteItem {
   set statusCode(int? statusCode) => values['statusCode'] = statusCode;
 
   //headers
-  Map<String, String>? get headers => values['headers'] == null ? null : Map.from(values['headers']);
+  Map<String, dynamic>? get headers => values['headers'] == null ? null : Map.from(values['headers']);
 
-  set headers(Map<String, String>? headers) => values['headers'] = headers;
+  set headers(Map<String, dynamic>? headers) => values['headers'] = headers;
 
   //body
   String? get body => values['body'];

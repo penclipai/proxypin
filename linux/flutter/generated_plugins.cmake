@@ -4,16 +4,18 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_multi_window
-  flutter_desktop_context_menu
   flutter_js
   proxy_manager
   screen_retriever_linux
+  tray_manager
   url_launcher_linux
   window_manager
   zstandard_linux
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  code_forge
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

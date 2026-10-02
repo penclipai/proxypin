@@ -10,7 +10,9 @@ import '../../utils/aes.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 
 class AesPage extends StatefulWidget {
-  const AesPage({super.key});
+  final String? text;
+
+  const AesPage({super.key, this.text});
 
   @override
   State<AesPage> createState() => _AesWidgetState();
@@ -28,6 +30,12 @@ class _AesWidgetState extends State<AesPage> {
   final List<String> modes = ['ECB', 'CBC'];
   final List<String> paddingModes = ['PKCS7', 'ZeroPadding'];
   final List<int> keyLengths = [128, 192, 256];
+
+  @override
+  void initState() {
+    super.initState();
+    inputController.text = widget.text ?? '';
+  }
 
   void encryptText() {
     try {
@@ -99,7 +107,7 @@ class _AesWidgetState extends State<AesPage> {
                   ),
                 ])),
             SizedBox(
-                width: 195,
+                width: 196,
                 child: Row(children: [
                   Text("Padding"),
                   const SizedBox(width: 15),
@@ -142,14 +150,14 @@ class _AesWidgetState extends State<AesPage> {
                 SizedBox(
                     width: 230,
                     child: Row(children: [
-                      const SizedBox(width: 25, child: Text("Key")),
+                      const SizedBox(width: 26, child: Text("Key")),
                       const SizedBox(width: 15),
                       SizedBox(
                           width: 180,
                           height: 45,
                           child: TextField(
                               controller: keyController,
-                              maxLength: 32,
+                              maxLength: 64,
                               onTapOutside: (event) => FocusManager.instance.primaryFocus?.unfocus(),
                               style: TextStyle(fontSize: 14),
                               decoration: InputDecoration(

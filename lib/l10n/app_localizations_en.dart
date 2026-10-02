@@ -9,6 +9,15 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get breakpoint => 'Breakpoint';
+
+  @override
+  String get breakpointRule => 'Breakpoint Rule';
+
+  @override
+  String get name => 'Name';
+
+  @override
   String get requests => 'Requests';
 
   @override
@@ -57,7 +66,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get proxySetting => 'Proxy Setting';
 
   @override
-  String get systemProxy => 'Set as System Proxy';
+  String get setAs => 'Set as ';
+
+  @override
+  String get systemProxy => 'System Proxy';
 
   @override
   String get enabledHTTP2 => 'Enable HTTP2';
@@ -129,7 +141,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get autoStartupDescribe => 'Automatically start recording traffic when the program starts';
 
   @override
+  String get minimizeToTrayTitle => 'Minimize to tray on close';
+
+  @override
+  String get minimizeToTraySubtitle => 'Closing the window will keep ProxyPin running and hide it to the system tray.';
+
+  @override
+  String get trayClosePromptContent =>
+      'Closing the window will keep ProxyPin running in the system tray. Do you want to minimize it now?';
+
+  @override
+  String get trayCloseExitAnyway => 'Exit anyway';
+
+  @override
+  String get trayCloseMinimizeToTray => 'Minimize to tray';
+
+  @override
   String get copied => 'Copied to clipboard';
+
+  @override
+  String get execute => 'Execute';
 
   @override
   String get cancel => 'Cancel';
@@ -172,6 +203,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get exportSuccess => 'Export successful';
+
+  @override
+  String get exportFailed => 'Export failed';
 
   @override
   String get deleteSuccess => 'Delete successful';
@@ -273,6 +307,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get edit => 'Edit';
 
   @override
+  String get moveUp => 'Move Up';
+
+  @override
+  String get moveDown => 'Move Down';
+
+  @override
+  String get dragSort => 'Drag to Sort';
+
+  @override
   String get disabled => 'Disabled';
 
   @override
@@ -288,6 +331,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get click => 'Click';
+
+  @override
+  String get loadRemoteScript => 'load remote script';
 
   @override
   String get replace => 'Replace';
@@ -324,6 +370,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get editReportServer => 'Edit Report Server';
+
+  @override
+  String get splitReport => 'Split Report';
 
   @override
   String get serverUrl => 'Server URL';
@@ -413,6 +462,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get selectAction => 'Select action';
 
   @override
+  String get select => 'Select';
+
+  @override
   String get copy => 'Copy';
 
   @override
@@ -432,6 +484,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get copyAsPythonRequests => 'Copy as Python Requests';
+
+  @override
+  String get copyAsFetch => 'Copy as fetch';
 
   @override
   String get delete => 'Delete';
@@ -482,6 +537,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get viewExport => 'View Export';
 
   @override
+  String get exportDomainHar => 'Export This Domain HAR';
+
+  @override
   String get timeDesc => 'Descending by time';
 
   @override
@@ -513,9 +571,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteFavoriteSuccess => 'Favorite deleted';
-
-  @override
-  String get name => 'Name';
 
   @override
   String get historyRecord => 'History';
@@ -700,7 +755,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shareCurl => 'Share cURL Request';
 
   @override
-  String get shareRequestResponse => 'Share Request and Response';
+  String get requestResponse => 'Request and Response';
 
   @override
   String get captureDetail => 'Capture Detail';
@@ -750,11 +805,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get disconnect => 'Disconnect';
 
   @override
-  String get ipLayerProxy => 'IP Layer Proxy(Beta)';
+  String get ipLayerProxy => 'IP Layer Proxy';
 
   @override
-  String get ipLayerProxyDesc =>
-      'IP layer proxy can capture Flutter app requests, currently not very stable, welcome to submit PR';
+  String get ipLayerProxyDesc => 'IP layer proxy can capture Flutter app requests';
 
   @override
   String get inputAddress => 'Input Address';
@@ -791,12 +845,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pipIconDescribe => 'Show quick access to small window Icon';
 
   @override
-  String get headerExpanded => 'Headers Expanded';
-
-  @override
-  String get headerExpandedSubtitle => 'Details page Headers is expanded by default';
-
-  @override
   String get bottomNavigation => 'Bottom Navigation';
 
   @override
@@ -808,6 +856,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get memoryCleanupSubtitle =>
       'Automatically clean up requests on memory limit reached and keep 32 most recent after cleaning';
+
+  @override
+  String get clearConfirm => 'Confirm before clearing captured records';
+
+  @override
+  String get clearConfirmSubtitle => 'Show a confirmation dialog before clearing captured records';
 
   @override
   String get unlimited => 'Unlimited';
@@ -923,6 +977,47 @@ class AppLocalizationsEn extends AppLocalizations {
   String get qrCode => 'QR Code';
 
   @override
+  String get jsonViewer => 'JSON Viewer';
+
+  @override
+  String get xmlViewer => 'XML Viewer';
+
+  @override
+  String get textDiff => 'Text Diff';
+
+  @override
+  String get textEditor => 'Text Editor';
+
+  @override
+  String get compare => 'Compare';
+
+  @override
+  String get diffOriginal => 'Original';
+
+  @override
+  String get diffChanged => 'Changed';
+
+  @override
+  String get diffIdentical => 'Two texts are identical';
+
+  @override
+  String diffSummary(int added, int removed) {
+    return '+$added −$removed';
+  }
+
+  @override
+  String get text => 'Text';
+
+  @override
+  String get format => 'Format';
+
+  @override
+  String get compact => 'Compact';
+
+  @override
+  String get wordWrap => 'Word Wrap';
+
+  @override
   String get scanQrCode => 'Scan QR Code';
 
   @override
@@ -971,6 +1066,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cipher => 'Cipher';
 
   @override
+  String get view => 'View';
+
+  @override
   String get appUpdateCheckVersion => 'Check for Updates';
 
   @override
@@ -996,6 +1094,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get appUpdateIgnoreBtnTxt => 'Ignore';
+
+  @override
+  String get appUpdateInstallNow => 'Install Now';
+
+  @override
+  String get appUpdateRetry => 'Retry';
+
+  @override
+  String get appUpdateBackgroundDownload => 'Download in background';
+
+  @override
+  String get appUpdateOpenDownloadPage => 'Open Download Page';
 
   @override
   String get requestMap => 'Request Map';
@@ -1027,9 +1137,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sponsorAfdian => 'AFDIAN';
-
-  @override
-  String get sponsorBuyMeCoffee => 'Buy Me a Coffee';
 
   @override
   String get privacyPolicy => 'Privacy Policy';
@@ -1070,4 +1177,261 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get roomIdLabel => 'Room ID';
+
+  @override
+  String get requestCrypto => 'Request Crypto';
+
+  @override
+  String get cryptoDecoded => 'Decoded';
+
+  @override
+  String get cryptoDecodeToggle => 'Decrypt';
+
+  @override
+  String get optional => 'Optional';
+
+  @override
+  String get cryptoRuleField => 'Field Name';
+
+  @override
+  String get cryptoIvPrefixLabel => 'IV Prefix';
+
+  @override
+  String get cryptoIvPrefixTooltip => 'Use the first N bytes of the response body as IV';
+
+  @override
+  String get local => 'Local';
+
+  @override
+  String get remoteUrl => 'Remote URL';
+
+  @override
+  String get preview => 'Preview';
+
+  @override
+  String get environment => 'Environment';
+
+  @override
+  String get environmentVariables => 'Environment Variables';
+
+  @override
+  String get envGlobal => 'Global';
+
+  @override
+  String get envManage => 'Manage Environments…';
+
+  @override
+  String get envNone => 'No Environment';
+
+  @override
+  String get envDeleteConfirm => 'Delete this environment?';
+
+  @override
+  String get envEmptyHint => 'No variables yet. Click + to add.';
+
+  @override
+  String get envUsageHint => 'Reference variables as %s in rules, or read/write via context.env in scripts.';
+
+  @override
+  String get envInsertBuiltIn => 'Insert built-in variable';
+
+  @override
+  String get weakNetwork => 'Network Throttling';
+
+  @override
+  String get weakNetworkPreset => 'Preset';
+
+  @override
+  String get weakNetworkPresetOffline => 'Offline';
+
+  @override
+  String get weakNetworkPresetSlow => 'Slow';
+
+  @override
+  String get weakNetworkPresetWeak => 'Weak';
+
+  @override
+  String get weakNetworkLatency => 'Latency';
+
+  @override
+  String get weakNetworkUpload => 'Upload';
+
+  @override
+  String get weakNetworkDownload => 'Download';
+
+  @override
+  String get weakNetworkBandwidth => 'Bandwidth';
+
+  @override
+  String get weakNetworkLossRate => 'Packet Loss';
+
+  @override
+  String get weakNetworkRules => 'URL Rules';
+
+  @override
+  String get mcpService => 'MCP Server';
+
+  @override
+  String get mcpServiceDescribe =>
+      'Starts a local HTTP server for Model Context Protocol (MCP) communication with AI tools such as Claude.';
+
+  @override
+  String get mcpEnable => 'Enable MCP Server';
+
+  @override
+  String get mcpPort => 'Port';
+
+  @override
+  String get mcpAdvanced => 'Advanced settings';
+
+  @override
+  String get mcpConfig => 'MCP Configuration';
+
+  @override
+  String get mcpRedact => 'Redact sensitive data before sending to AI';
+
+  @override
+  String get mcpRedactDescribe => 'Automatically redact sensitive information before it is sent to AI tools.';
+
+  @override
+  String mcpHintRun(String client) {
+    return 'Run this command in Terminal to add ProxyPin MCP to $client.';
+  }
+
+  @override
+  String get mcpAboutTitle => 'About MCP Integration';
+
+  @override
+  String get mcpAboutText =>
+      'MCP (Model Context Protocol) lets AI assistants like Claude interact with ProxyPin. AI can read captured HTTP traffic, create debugging rules (Map Local, Map Remote, Breakpoints), and help analyze network issues.';
+
+  @override
+  String get mcpLearnMore => 'Learn more about MCP';
+
+  @override
+  String get mcpSkills => 'Skills';
+
+  @override
+  String get mcpSkillsTitle => 'MCP Skills';
+
+  @override
+  String get mcpSkillsReadonly => 'Read-only traffic tools';
+
+  @override
+  String get mcpSkillsRules => 'Rules, replay & environment tools';
+
+  @override
+  String get mcpEndpoint => 'MCP Endpoint';
+
+  @override
+  String get mcpPortInvalid => 'Please enter a valid port between 1024 and 65535';
+
+  @override
+  String get mcpAccessToken => 'Access Token';
+
+  @override
+  String get mcpLanGuide =>
+      'Keep this phone and your computer on the same Wi-Fi, then run one of the commands below in your computer\'s terminal, or paste the configuration into your AI client\'s MCP settings.';
+
+  @override
+  String get mcpLanTokenNote =>
+      'The token authorizes full access to the MCP tools. Tap the refresh button next to the token to revoke it and issue a new one.';
+
+  @override
+  String get mcpOtherClients => 'Other AI clients';
+
+  @override
+  String get mcpOtherClientsHint =>
+      'Universal Streamable HTTP config for Cursor, Cline, Gemini CLI, Cherry Studio, VS Code Copilot and other MCP clients. Paste the URL and Bearer token, or the full JSON, into the client\'s MCP settings.';
+
+  @override
+  String get mcpOneClick => 'One-click setup on your computer';
+
+  @override
+  String get mcpOneClickHint =>
+      'Copy the matching command and run it on the computer: Terminal for macOS/Linux, PowerShell for Windows. It auto-detects installed AI clients (Claude Code, Codex, Cursor, Gemini CLI) and configures them over Wi-Fi.';
+
+  @override
+  String get mcpRegenerateToken => 'Reset token';
+
+  @override
+  String get mcpStatusRunning => 'Running';
+
+  @override
+  String get mcpStatusStopped => 'Stopped';
+
+  @override
+  String get mcpClientLabel => 'AI client';
+
+  @override
+  String get mcpTransportLabel => 'Transport';
+
+  @override
+  String get mcpCommandLabel => 'Connect command';
+
+  @override
+  String get mcpClientsIntl => 'International';
+
+  @override
+  String get mcpClientsDomestic => 'Chinese';
+
+  @override
+  String get mcpTransportStdio => 'stdio';
+
+  @override
+  String get mcpTransportHttp => 'HTTP';
+
+  @override
+  String get mcpHintTerminal => 'Copy and run in your terminal.';
+
+  @override
+  String get mcpHintJson => 'Paste into your client\'s MCP settings.';
+
+  @override
+  String get mcpHintCopilot => 'Paste into VS Code settings.json → mcp.servers.';
+
+  @override
+  String get mcpHintLingma => 'Tongyi Lingma IDE → Profile → Settings → MCP Service → Add manually (HTTP/URL type).';
+
+  @override
+  String get mcpHintCherry => 'Cherry Studio → Settings → MCP Servers → Add.';
+
+  @override
+  String get mcpHintDoubao => 'MarsCode IDE → Settings → MCP → Add (HTTP/URL type).';
+
+  @override
+  String get mcpSetup => 'Auto setup';
+
+  @override
+  String get mcpStartChat => 'Start chat';
+
+  @override
+  String get mcpOpenTerminal => 'Run in terminal';
+
+  @override
+  String get mcpSetupDone => 'Configured. Restart your AI client to apply.';
+
+  @override
+  String get mcpSetupFail => 'Setup failed: ';
+
+  @override
+  String mcpCliMissing(Object cli) {
+    return 'CLI $cli not found on PATH. Use \"Run in terminal\" instead.';
+  }
+
+  @override
+  String get mcpUnsupported => 'This client does not support auto setup, configure it manually.';
+
+  @override
+  String get mcpCopy => 'Copy';
+
+  @override
+  String get mcpCopied => 'Copied';
+
+  @override
+  String get mcpStartFailed => 'MCP service failed to start';
+
+  @override
+  String get mcpPrivacyHint =>
+      'Only listens on 127.0.0.1 (this machine). Data leaves the app only when an AI client explicitly requests it via a tool.';
 }

@@ -1,4 +1,4 @@
-import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
@@ -15,7 +15,7 @@ import 'package:intl/intl.dart';
 /// Stream code extractor page
 /// Displays captured Douyin live streaming push codes with copy and refresh functionality
 class StreamCodePage extends StatefulWidget {
-  final int? windowId;
+  final String? windowId;
   final ListenableList<HttpRequest>? trafficContainer;
 
   const StreamCodePage({super.key, this.windowId, this.trafficContainer});
@@ -368,8 +368,7 @@ class _StreamCodePageState extends State<StreamCodePage> {
       children: [
         // Account section (if available)
         _buildAccountSection(data),
-        if (data.accountNickname != null || data.accountAvatarUrl != null)
-          const SizedBox(height: 16),
+        if (data.accountNickname != null || data.accountAvatarUrl != null) const SizedBox(height: 16),
 
         // Unified stream code card with optional live room header
         Card(

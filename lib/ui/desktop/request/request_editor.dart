@@ -17,29 +17,61 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:code_forge/code_forge.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:re_highlight/styles/atom-one-dark.dart';
+import 'package:re_highlight/styles/atom-one-light.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/channel/host_port.dart';
+import 'package:proxypin/network/http/content_type.dart';
+import 'package:proxypin/network/components/manager/environment_manager.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/http/http_headers.dart';
 import 'package:proxypin/network/http/http_client.dart';
 import 'package:proxypin/network/util/logger.dart';
+import 'package:proxypin/ui/component/env_var_highlight.dart';
+import 'package:proxypin/ui/component/form_body_editor.dart';
+import 'package:proxypin/ui/component/search/finder.dart';
 import 'package:proxypin/ui/component/split_view.dart';
 import 'package:proxypin/ui/component/state_component.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/body.dart';
 import 'package:proxypin/utils/curl.dart';
+import 'package:proxypin/utils/highlight_languages.dart';
+import 'package:proxypin/utils/form_url.dart';
+import 'package:proxypin/utils/multipart.dart';
 import 'package:proxypin/utils/lang.dart';
+import 'package:proxypin/utils/xml_formatter.dart';
+
+import '../../component/http_method_popup.dart';
+
+enum RequestEditorSource {
+  editor,
+  breakpointRequest,
+  breakpointResponse,
+}
 
 /// @author wanghongen
 class RequestEditor extends StatefulWidget {
   final WindowController? windowController;
   final HttpRequest? request;
+  final RequestEditorSource source;
+  final Function(HttpRequest? request)? onExecuteRequest;
+  final Function(HttpResponse? response)? onExecuteResponse;
+  final HttpResponse? response;
 
-  const RequestEditor({super.key, this.request, this.windowController});
+  const RequestEditor({
+    super.key,
+    this.request,
+    this.response,
+    this.windowController,
+    this.source = RequestEditorSource.editor,
+    this.onExecuteRequest,
+    this.onExecuteResponse,
+  });
 
   @override
   State<StatefulWidget> createState() {
@@ -58,6 +90,7 @@ class RequestEditorState extends State<RequestEditor> {
   HttpResponse? response;
 
   bool showCURLDialog = false;
+  bool executed = false;
 
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
@@ -65,6 +98,10 @@ class RequestEditorState extends State<RequestEditor> {
   void initState() {
     super.initState();
     request = widget.request;
+    response = widget.response;
+    if (response != null) {
+      responseChange.value = 1;
+    }
     HardwareKeyboard.instance.addHandler(onKeyEvent);
     if (widget.request == null) {
       curlParse();
@@ -101,6 +138,16 @@ class RequestEditorState extends State<RequestEditor> {
 
   @override
   void dispose() {
+    if ((widget.source == RequestEditorSource.breakpointRequest ||
+            widget.source == RequestEditorSource.breakpointResponse) &&
+        !executed) {
+      if (widget.source == RequestEditorSource.breakpointRequest) {
+        widget.onExecuteRequest?.call(null);
+      } else {
+        widget.onExecuteResponse?.call(null);
+      }
+    }
+
     HardwareKeyboard.instance.removeHandler(onKeyEvent);
     responseChange.dispose();
     super.dispose();
@@ -108,14 +155,50 @@ class RequestEditorState extends State<RequestEditor> {
 
   @override
   Widget build(BuildContext context) {
+    var title = localizations.httpRequest;
+    var buttonText = localizations.send;
+    IconData icon = Icons.send;
+
+    if (widget.source == RequestEditorSource.breakpointRequest) {
+      title = "Breakpoint Request";
+      buttonText = localizations.execute;
+      icon = Icons.play_arrow;
+    } else if (widget.source == RequestEditorSource.breakpointResponse) {
+      title = "Breakpoint Response";
+      buttonText = localizations.execute;
+      icon = Icons.play_arrow;
+    }
+
     return Scaffold(
         appBar: AppBar(
-          title: Text(localizations.httpRequest, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+          title: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
           toolbarHeight: Platform.isWindows ? 36 : null,
           centerTitle: true,
           actions: [
             TextButton.icon(
-                onPressed: () async => sendRequest(), icon: const Icon(Icons.send), label: Text(localizations.send)),
+                onPressed: () async {
+                  if (widget.source == RequestEditorSource.editor) {
+                    sendRequest();
+                  } else {
+                    executeBreakpoint();
+                  }
+                },
+                icon: Icon(icon),
+                label: Text(buttonText)),
+            if (widget.source == RequestEditorSource.breakpointRequest ||
+                widget.source == RequestEditorSource.breakpointResponse)
+              TextButton.icon(
+                  onPressed: () {
+                    // ignore breakpoint
+                    if (widget.source == RequestEditorSource.breakpointRequest) {
+                      widget.onExecuteRequest?.call(null);
+                    } else {
+                      widget.onExecuteResponse?.call(null);
+                    }
+                    widget.windowController?.close();
+                  },
+                  icon: const Icon(Icons.cancel),
+                  label: Text(localizations.cancel)),
             const SizedBox(width: 10)
           ],
         ),
@@ -129,6 +212,7 @@ class RequestEditorState extends State<RequestEditor> {
               title: const Text("Request", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
               message: request,
               urlQueryNotifier: _queryNotifier,
+              readOnly: widget.source == RequestEditorSource.breakpointResponse,
             ),
             right: ValueListenableBuilder(
                 valueListenable: responseChange,
@@ -161,7 +245,7 @@ class RequestEditorState extends State<RequestEditor> {
                                 ]))
                               ]),
                               message: response,
-                              readOnly: true))
+                              readOnly: widget.source != RequestEditorSource.breakpointResponse))
                     ],
                   );
                 }),
@@ -172,21 +256,23 @@ class RequestEditorState extends State<RequestEditor> {
   ///发送请求
   Future<void> sendRequest() async {
     var currentState = requestLineKey.currentState!;
+    // 先取 body：multipart 构建时会把带 boundary 的 Content-Type 写回 header 行
+    var bodyBytes = requestKey.currentState?.getBodyBytes();
     var headers = requestKey.currentState?.getHeaders();
-    var requestBody = requestKey.currentState?.getBody();
-    String url = currentState.requestUrl.text;
-    HttpRequest request = HttpRequest(HttpMethod.valueOf(currentState.requestMethod), Uri.parse(url).toString(),
+    String url = _renderEnv(currentState.requestUrl.text);
+    _renderHeadersInPlace(headers);
+    HttpRequest request = HttpRequest(currentState.requestMethod, Uri.parse(url).toString(),
         protocolVersion: this.request?.protocolVersion ?? "HTTP/1.1");
     request.headers.addAll(headers);
-    request.body = requestBody == null ? null : utf8.encode(requestBody);
+    request.body = bodyBytes;
 
     responseKey.currentState?.change(null);
     responseChange.value = 0;
 
-    Map? proxyResult = await DesktopMultiWindow.invokeMethod(0, 'getProxyInfo');
+    Map? proxyResult = await DesktopMultiWindow.invokeMainWindowMethod('getProxyInfo');
     ProxyInfo? proxyInfo = proxyResult == null ? null : ProxyInfo.of(proxyResult['host'], proxyResult['port']);
 
-    HttpClients.proxyRequest(request, proxyInfo: proxyInfo, timeout: Duration(seconds: 15)).then((response) {
+    HttpClients.proxyRequest(request, proxyInfo: proxyInfo, timeout: Duration(seconds: 30)).then((response) {
       this.response = response;
       responseKey.currentState?.change(response);
       responseChange.value = 1;
@@ -195,6 +281,48 @@ class RequestEditorState extends State<RequestEditor> {
       logger.e("Request failed", error: e, stackTrace: stackTrace);
       responseChange.value = -1;
       if (mounted) FlutterToastr.show('${localizations.fail}$e', context);
+    });
+  }
+
+  void executeBreakpoint() {
+    executed = true;
+    if (widget.source == RequestEditorSource.breakpointRequest) {
+      var currentState = requestLineKey.currentState!;
+      var bodyBytes = requestKey.currentState?.getBodyBytes();
+      var headers = requestKey.currentState?.getHeaders();
+      String url = _renderEnv(currentState.requestUrl.text);
+      _renderHeadersInPlace(headers);
+
+      if (request == null) return;
+      HttpRequest newRequest = request!.copy(uri: url);
+      newRequest.method = currentState.requestMethod;
+      newRequest.headers.clear();
+      newRequest.headers.addAll(headers);
+      newRequest.body = bodyBytes;
+      widget.onExecuteRequest?.call(newRequest);
+    } else if (widget.source == RequestEditorSource.breakpointResponse) {
+      var bodyBytes = responseKey.currentState?.getBodyBytes();
+      var headers = responseKey.currentState?.getHeaders();
+      _renderHeadersInPlace(headers);
+
+      if (response == null) return;
+      HttpResponse newResponse = response!.copy();
+      newResponse.headers.clear();
+      newResponse.headers.addAll(headers);
+      newResponse.body = bodyBytes;
+      widget.onExecuteResponse?.call(newResponse);
+    }
+  }
+
+  /// 用当前激活的环境变量渲染 `{{name}}`。EnvironmentManager 未加载或未启用时返回原值。
+  static String _renderEnv(String input) => EnvironmentManager.tryRender(input) ?? input;
+
+  /// 就地渲染 headers 每一项的 value。key 保持原样(用作变量占位符的场景极少)。
+  static void _renderHeadersInPlace(HttpHeaders? headers) {
+    headers?.forEach((_, values) {
+      for (int i = 0; i < values.length; i++) {
+        values[i] = _renderEnv(values[i]);
+      }
     });
   }
 
@@ -227,7 +355,7 @@ class RequestEditorState extends State<RequestEditor> {
                         setState(() {
                           request = Curl.parse(text!);
                           requestKey.currentState?.change(request!);
-                          requestLineKey.currentState?.change(request?.requestUrl, request?.method.name);
+                          requestLineKey.currentState?.change(request?.requestUrl, request?.method);
                         });
                       } catch (e) {
                         FlutterToastr.show(localizations.fail, context);
@@ -270,17 +398,85 @@ class _HttpWidget extends StatefulWidget {
   }
 }
 
+/// 请求 Body 编辑器的数据类型选项。
+/// - NONE 表示请求不带 body（编辑器隐藏，发送时 body=null，并删除 Content-Type 头）。
+/// - RAW 表示无高亮且不修改 Content-Type；
+/// - 其余项对应一个 [ContentType]，用户手动切换时会写入 Content-Type 请求头。
+enum _BodyLanguage {
+  none,
+  raw,
+  text,
+  json,
+  xml,
+  formUrl,
+  formData,
+}
+
 class _HttpState extends State<_HttpWidget> {
+  /// 数据类型下拉显示的标签
+  static const Map<_BodyLanguage, String> _bodyLanguageLabels = {
+    _BodyLanguage.none: 'NONE',
+    _BodyLanguage.raw: 'RAW',
+    _BodyLanguage.text: 'TEXT',
+    _BodyLanguage.json: 'JSON',
+    _BodyLanguage.xml: 'XML',
+    _BodyLanguage.formUrl: 'FORM-URL',
+    _BodyLanguage.formData: 'FORM-DATA',
+  };
+
+  /// _BodyLanguage 与 ContentType 的对应关系；RAW 没有对应项
+  static const Map<_BodyLanguage, ContentType> _bodyLanguageToContentType = {
+    _BodyLanguage.text: ContentType.text,
+    _BodyLanguage.json: ContentType.json,
+    _BodyLanguage.xml: ContentType.xml,
+    _BodyLanguage.formUrl: ContentType.formUrl,
+    _BodyLanguage.formData: ContentType.formData,
+  };
+
+  /// 用户手动切换数据类型时，写入 Content-Type 请求头使用的 MIME 主类型。
+  /// FORM-DATA 由于需要 boundary 参数才合法，单独处理。
+  static const Map<_BodyLanguage, String> _bodyLanguageMime = {
+    _BodyLanguage.text: 'text/plain',
+    _BodyLanguage.json: 'application/json',
+    _BodyLanguage.xml: 'application/xml',
+    _BodyLanguage.formUrl: 'application/x-www-form-urlencoded',
+    _BodyLanguage.formData: 'multipart/form-data',
+  };
+
   List<String> tabs = ['Header', 'Body'];
   final headerKey = GlobalKey<KeyValState>();
   Map<String, List<String>> initHeader = {};
   HttpMessage? message;
-  TextEditingController? body;
+  CodeForgeController? body;
+
+  /// FORM-DATA / FORM-URL 表单数据与 multipart boundary
+  FormBody formData = FormBody();
+  String _boundary = Multipart.newBoundary();
+  final formEditorKey = GlobalKey<FormBodyEditorState>();
+
+  /// 当前编辑器使用的语言；初始化时按 Content-Type 推导
+  _BodyLanguage _bodyLanguage = _BodyLanguage.none;
+  bool _bodyWrap = true;
 
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
-  String? getBody() {
-    return body?.text;
+  /// 可直接发送的 body 字节；NONE 返回 null。
+  /// multipart 文本值在此渲染环境变量，同时把带 boundary 的 Content-Type 写回 header 行；
+  /// 其余类型也在此渲染环境变量，调用方不再转换 body。
+  List<int>? getBodyBytes() {
+    switch (_bodyLanguage) {
+      case _BodyLanguage.none:
+        return null;
+      case _BodyLanguage.formUrl:
+        return FormUrl.buildBytes(formData);
+      case _BodyLanguage.formData:
+        headerKey.currentState
+            ?.setParam('Content-Type', 'multipart/form-data; boundary=$_boundary');
+        return Multipart.buildBytes(formData, boundary: _boundary);
+      default:
+        final text = body?.text ?? '';
+        return utf8.encode(EnvironmentManager.tryRender(text) ?? text);
+    }
   }
 
   HttpHeaders? getHeaders() {
@@ -291,11 +487,13 @@ class _HttpState extends State<_HttpWidget> {
   void initState() {
     super.initState();
     if (widget.urlQueryNotifier != null) {
-      tabs.insert(0, "URL Params");
+      tabs.insert(0, "Params");
     }
 
     message = widget.message;
-    body = TextEditingController(text: widget.message?.bodyAsString);
+    body = CodeForgeController()..text = widget.message?.bodyAsString ?? '';
+    _bodyLanguage = _resolveLanguage(widget.message);
+    _loadFormData(widget.message);
     if (widget.message?.headers == null && !widget.readOnly) {
       initHeader["User-Agent"] = ["ProxyPin/${AppConfiguration.version}"];
       initHeader["Accept"] = ["*/*"];
@@ -303,10 +501,60 @@ class _HttpState extends State<_HttpWidget> {
     }
   }
 
-  change(HttpMessage? message) {
+  @override
+  void dispose() {
+    body?.dispose();
+    super.dispose();
+  }
+
+  void change(HttpMessage? message) {
     this.message = message;
     body?.text = message?.bodyAsString ?? '';
+    _bodyLanguage = _resolveLanguage(message);
+    _loadFormData(message);
     headerKey.currentState?.refreshParam(message?.headers.getHeaders());
+  }
+
+  /// form-url / multipart 请求：解析已有 body 回填表单（multipart 保留原 boundary）；否则重置
+  void _loadFormData(HttpMessage? msg) {
+    final ct = msg?.headers.contentType.toLowerCase() ?? '';
+    final msgBody = msg?.body;
+    if (msgBody != null && msgBody.isNotEmpty) {
+      if (ct.contains('multipart/form-data')) {
+        formData = Multipart.parse(msgBody, ct);
+        _boundary = Multipart.boundaryFromContentType(ct) ?? Multipart.newBoundary();
+        return;
+      }
+      if (ct.contains('application/x-www-form-urlencoded')) {
+        formData = FormUrl.parse(msgBody);
+        return;
+      }
+    }
+    formData = FormBody();
+    _boundary = Multipart.newBoundary();
+  }
+
+  /// 根据消息推断编辑器初始语言；初始化推断不会回写 header。
+  /// - body 为空且方法是 GET/HEAD/DELETE/OPTIONS 或没有 Content-Type 头 → NONE
+  _BodyLanguage _resolveLanguage(HttpMessage? message) {
+    if (message == null) return _BodyLanguage.none;
+
+    final bodyEmpty = (message.bodyAsString.isEmpty);
+    final hasContentType = message.headers.contentType.isNotEmpty;
+    if (bodyEmpty && message is HttpRequest) {
+      const noBodyMethods = {HttpMethod.get, HttpMethod.head, HttpMethod.delete, HttpMethod.options};
+      if (noBodyMethods.contains(message.method) || !hasContentType) {
+        return _BodyLanguage.none;
+      }
+    } else if (bodyEmpty && !hasContentType) {
+      return _BodyLanguage.none;
+    }
+
+    final ct = message.contentType;
+    for (final entry in _bodyLanguageToContentType.entries) {
+      if (entry.value == ct) return entry.key;
+    }
+    return _BodyLanguage.json;
   }
 
   @override
@@ -342,7 +590,8 @@ class _HttpState extends State<_HttpWidget> {
                           KeyValWidget(
                               key: headerKey,
                               params: message?.headers.getHeaders() ?? initHeader,
-                              readOnly: widget.readOnly),
+                              readOnly: widget.readOnly,
+                              suggestions: HttpHeaders.commonHeaderKeys),
                           _body()
                         ],
                       )),
@@ -355,7 +604,201 @@ class _HttpState extends State<_HttpWidget> {
           child: SingleChildScrollView(child: HttpBodyWidget(httpMessage: message, hideRequestRewrite: true)));
     }
 
-    return TextFormField(autofocus: true, controller: body, readOnly: widget.readOnly, minLines: 20, maxLines: 20);
+    if (_bodyLanguage == _BodyLanguage.formData || _bodyLanguage == _BodyLanguage.formUrl) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _bodyToolbar(),
+        const SizedBox(height: 3),
+        Expanded(child: FormBodyEditor(
+          key: formEditorKey,
+          form: formData,
+          allowFiles: _bodyLanguage == _BodyLanguage.formData,
+        )),
+      ]);
+    }
+
+    final isCN = localizations.localeName == 'zh';
+    final isNone = _bodyLanguage == _BodyLanguage.none;
+    final ct = _bodyLanguageToContentType[_bodyLanguage];
+    final language = ct == null ? null : HighlightLanguages.getLanguage(ct);
+    final isDark = Theme.brightnessOf(context) == Brightness.dark;
+    final baseTheme = isDark ? atomOneDarkTheme : atomOneLightTheme;
+    final pageBg = Theme.of(context).colorScheme.surface;
+    final editorTheme = isDark
+        ? {
+            ...baseTheme,
+            'root': const TextStyle(color: Color(0xffabb2bf)).copyWith(backgroundColor: pageBg),
+          }
+        : baseTheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, right: 10, bottom: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _bodyToolbar(),
+        const SizedBox(height: 3),
+        Expanded(
+          child: isNone
+              ? Center(
+                  child: Text(
+                    isCN ? '此请求无消息体' : 'This request has no body',
+                    style: TextStyle(color: Theme.of(context).hintColor),
+                  ),
+                )
+              : Container(
+                  decoration: BoxDecoration(border: Border.all(color: Colors.black12)),
+                  child: CodeForge(
+                    // CodeForge 把 language 当作 late final 在 initState 里固定，
+                    // 切换数据类型后必须靠新的 key 重建组件才能让高亮实时生效；
+                    // controller 由本 State 持有，重建不会丢文本。
+                    key: ValueKey('body-editor-${_bodyLanguage.name}-$_bodyWrap'),
+                    controller: body!,
+                    autoFocus: true,
+                    lineWrap: _bodyWrap,
+                    language: language,
+                    enableGuideLines: false,
+                    selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
+                    editorTheme: editorTheme,
+                    textStyle: const TextStyle(fontSize: 14.2),
+                    finderBuilder: (c, controller) => FindPanelView(controller: controller),
+                  ),
+                ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _bodyToolbar() {
+    final localizations = AppLocalizations.of(context)!;
+    final isCN = localizations.localeName == 'zh';
+    final color = Theme.of(context).colorScheme.primary;
+    // NONE 无 body；FORM-DATA/FORM-URL 由表单构建器管理，纯文本工具均不适用
+    final textToolsDisabled = _bodyLanguage == _BodyLanguage.none ||
+        _bodyLanguage == _BodyLanguage.formData ||
+        _bodyLanguage == _BodyLanguage.formUrl;
+
+    return SizedBox(
+        height: 34,
+        child: Row(children: [
+          Text(isCN ? '数据类型' : 'Type', style: const TextStyle(fontSize: 12)),
+          const SizedBox(width: 8),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<_BodyLanguage>(
+              value: _bodyLanguage,
+              isDense: true,
+              icon: const Icon(Icons.arrow_drop_down, size: 18),
+              items: _BodyLanguage.values
+                  .map((e) => DropdownMenuItem(
+                      value: e,
+                      child: Text(_bodyLanguageLabels[e] ?? e.name.toUpperCase(),
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500))))
+                  .toList(),
+              onChanged: (val) {
+                if (val == null || val == _bodyLanguage) return;
+                setState(() => _bodyLanguage = val);
+                _syncContentTypeHeader(val);
+              },
+            ),
+          ),
+          // FORM-DATA/FORM-URL：添加入口放工具栏（添加文本；multipart 另有选择文件）
+          if (_bodyLanguage == _BodyLanguage.formData || _bodyLanguage == _BodyLanguage.formUrl) ...[
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => formEditorKey.currentState?.addTextField(),
+              icon: const Icon(Icons.text_fields, size: 16),
+              // 中文"添加文本"不空格，英文"Add Text"需空格
+              label: Text(isCN ? '${localizations.add}${localizations.text}'
+                  : '${localizations.add} ${localizations.text}',
+                  style: const TextStyle(fontSize: 12.5)),
+            ),
+            if (_bodyLanguage == _BodyLanguage.formData)
+              TextButton.icon(
+                onPressed: () => formEditorKey.currentState?.addFiles(),
+                icon: const Icon(Icons.upload_file, size: 16),
+                label: Text(localizations.selectFile, style: const TextStyle(fontSize: 12.5)),
+              ),
+          ],
+          // 其他文本类型：换行/美化/复制
+          if (!textToolsDisabled) ...[
+            const Spacer(),
+            IconButton(
+              tooltip: localizations.wordWrap,
+              iconSize: 16,
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.wrap_text, color: _bodyWrap ? color : null),
+              onPressed: () => setState(() => _bodyWrap = !_bodyWrap),
+            ),
+            SizedBox(width: 3),
+            IconButton(
+              tooltip: localizations.format,
+              iconSize: 16,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.auto_fix_high),
+              onPressed: _beautifyBody,
+            ),
+            SizedBox(width: 3),
+            IconButton(
+              tooltip: localizations.copy,
+              iconSize: 16,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.copy),
+              onPressed: () {
+                final text = body?.text ?? '';
+                if (text.isEmpty) return;
+                Clipboard.setData(ClipboardData(text: text));
+                FlutterToastr.show(localizations.copied, context);
+              },
+            ),
+          ],
+        ]));
+  }
+
+  /// 用户主动切换数据类型时，把 Content-Type 请求头改成对应 MIME。
+  /// - NONE：删除 Content-Type；body 不发。
+  /// - RAW：保持原 header 不动。
+  /// - 其他：写入对应 MIME。
+  void _syncContentTypeHeader(_BodyLanguage lang) {
+    if (lang == _BodyLanguage.raw) return;
+    final headerState = headerKey.currentState;
+    if (headerState == null) return;
+
+    // FORM-DATA 需要带上 boundary 才是合法的 Content-Type
+    if (lang == _BodyLanguage.formData) {
+      headerState.setParam('Content-Type', 'multipart/form-data; boundary=$_boundary');
+      return;
+    }
+
+    if (lang == _BodyLanguage.none) {
+      headerState.removeParam('Content-Type');
+      return;
+    }
+
+    String mime = _bodyLanguageMime[lang] ?? 'text/plain';
+    headerState.setParam('Content-Type', mime);
+  }
+
+  /// 根据当前数据类型对 body 文本做格式化
+  void _beautifyBody() {
+    final controller = body;
+    if (controller == null) return;
+    final text = controller.text;
+    if (text.isEmpty) return;
+    String formatted;
+    switch (_bodyLanguage) {
+      case _BodyLanguage.json:
+        formatted = JSON.pretty(text);
+        break;
+      case _BodyLanguage.xml:
+        formatted = XML.pretty(text);
+        break;
+      default:
+        FlutterToastr.show(
+            AppLocalizations.of(context)!.localeName == 'zh'
+                ? '当前数据类型不支持美化'
+                : 'Beautify is not supported for this type',
+            context);
+        return;
+    }
+    if (formatted != text) {
+      controller.text = formatted;
+    }
   }
 }
 
@@ -373,8 +816,8 @@ class _RequestLine extends StatefulWidget {
 }
 
 class _RequestLineState extends State<_RequestLine> {
-  String requestMethod = HttpMethod.get.name;
-  TextEditingController requestUrl = TextEditingController(text: "");
+  HttpMethod requestMethod = HttpMethod.get;
+  EnvHighlightTextEditingController requestUrl = EnvHighlightTextEditingController(text: "");
 
   @override
   void initState() {
@@ -387,7 +830,7 @@ class _RequestLineState extends State<_RequestLine> {
 
     var request = widget.request!;
     requestUrl.text = request.requestUrl;
-    requestMethod = request.method.name;
+    requestMethod = request.method;
   }
 
   @override
@@ -396,19 +839,19 @@ class _RequestLineState extends State<_RequestLine> {
     super.dispose();
   }
 
-  change(String? requestUrl, String? requestMethod) {
+  void change(String? requestUrl, HttpMethod? requestMethod) {
     this.requestUrl.text = requestUrl ?? this.requestUrl.text;
     this.requestMethod = requestMethod ?? this.requestMethod;
 
     urlNotifier();
   }
 
-  urlNotifier() {
+  void urlNotifier() {
     var splitFirst = requestUrl.text.splitFirst("?".codeUnits.first);
     widget.urlQueryNotifier?.onUrlChange(splitFirst.length > 1 ? splitFirst.last : '');
   }
 
-  onQueryChange(String query) {
+  void onQueryChange(String query) {
     var url = requestUrl.text;
     var indexOf = url.indexOf("?");
     if (indexOf == -1) {
@@ -424,18 +867,15 @@ class _RequestLineState extends State<_RequestLine> {
     return TextField(
         controller: requestUrl,
         decoration: InputDecoration(
-            prefix: DropdownButton(
-              padding: const EdgeInsets.only(right: 10),
-              underline: const SizedBox(),
-              isDense: true,
-              focusColor: Colors.transparent,
-              value: requestMethod,
-              items: HttpMethod.methods().map((it) => DropdownMenuItem(value: it.name, child: Text(it.name))).toList(),
-              onChanged: (String? value) {
-                setState(() {
-                  requestMethod = value!;
-                });
-              },
+            prefix: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: MethodPopupMenu(
+                value: requestMethod,
+                showSeparator: true,
+                onChanged: (val) {
+                  setState(() => requestMethod = val!);
+                },
+              ),
             ),
             isDense: true,
             border: const OutlineInputBorder(borderSide: BorderSide()),
@@ -450,6 +890,8 @@ class KeyVal {
   bool enabled = true;
   TextEditingController key;
   TextEditingController value;
+  FocusNode? keyFocusNode;
+  FocusNode? valueFocusNode;
 
   KeyVal(this.key, this.value);
 }
@@ -459,8 +901,9 @@ class KeyValWidget extends StatefulWidget {
   final Map<String, List<String>>? params;
   final bool readOnly; //只读
   final UrlQueryNotifier? paramNotifier;
+  final List<String>? suggestions;
 
-  const KeyValWidget({super.key, this.params, this.readOnly = false, this.paramNotifier});
+  const KeyValWidget({super.key, this.params, this.readOnly = false, this.paramNotifier, this.suggestions});
 
   @override
   State<StatefulWidget> createState() => KeyValState();
@@ -479,14 +922,14 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
     super.initState();
     widget.paramNotifier?.urlListener((url) => onChange(url));
     if (widget.params == null) {
-      var keyVal = KeyVal(TextEditingController(), TextEditingController());
+      var keyVal = KeyVal(TextEditingController(), EnvHighlightTextEditingController());
       _params.add(keyVal);
       return;
     }
 
     widget.params?.forEach((name, values) {
       for (var val in values) {
-        var keyVal = KeyVal(TextEditingController(text: name), TextEditingController(text: val));
+        var keyVal = KeyVal(TextEditingController(text: name), EnvHighlightTextEditingController(text: val));
         _params.add(keyVal);
       }
     });
@@ -499,7 +942,7 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
   }
 
   //监听url发生变化 更改表单
-  onChange(String value) {
+  void onChange(String value) {
     var query = value.split("&");
     int index = 0;
     while (index < query.length) {
@@ -507,7 +950,7 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
       String key = splitFirst.first;
       String? val = splitFirst.length == 1 ? null : splitFirst.last;
       if (_params.length <= index) {
-        _params.add(KeyVal(TextEditingController(text: key), TextEditingController(text: val)));
+        _params.add(KeyVal(TextEditingController(text: key), EnvHighlightTextEditingController(text: val)));
         continue;
       }
 
@@ -520,7 +963,7 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
     setState(() {});
   }
 
-  notifierChange() {
+  void notifierChange() {
     if (widget.paramNotifier == null) return;
     String query = _params
         .where((e) => e.enabled && e.key.text.isNotEmpty)
@@ -529,7 +972,7 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
     widget.paramNotifier?.onParamChange(query);
   }
 
-  clear() {
+  void clear() {
     for (var element in _params) {
       element.key.dispose();
       element.value.dispose();
@@ -538,16 +981,55 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
   }
 
   //刷新param
-  refreshParam(Map<String, List<String>>? headers) {
+  void refreshParam(Map<String, List<String>>? headers) {
     clear();
     setState(() {
       headers?.forEach((name, values) {
         for (var val in values) {
-          var keyVal = KeyVal(TextEditingController(text: name), TextEditingController(text: val));
+          var keyVal = KeyVal(TextEditingController(text: name), EnvHighlightTextEditingController(text: val));
           _params.add(keyVal);
         }
       });
     });
+  }
+
+  /// 设置或更新单条 header（不区分大小写匹配 key）。已存在则原地改 value，不存在则追加。
+  void setParam(String name, String value) {
+    KeyVal? matched;
+    for (var kv in _params) {
+      if (kv.key.text.toLowerCase() == name.toLowerCase()) {
+        matched = kv;
+        break;
+      }
+    }
+    setState(() {
+      if (matched != null) {
+        matched.enabled = true;
+        matched.value.text = value;
+      } else {
+        _params.add(KeyVal(TextEditingController(text: name), EnvHighlightTextEditingController(text: value)));
+      }
+    });
+    notifierChange();
+  }
+
+  /// 删除指定 header（不区分大小写匹配 key）。
+  void removeParam(String name) {
+    final removed = <KeyVal>[];
+    setState(() {
+      _params.removeWhere((kv) {
+        if (kv.key.text.toLowerCase() == name.toLowerCase()) {
+          removed.add(kv);
+          return true;
+        }
+        return false;
+      });
+    });
+    for (final kv in removed) {
+      kv.key.dispose();
+      kv.value.dispose();
+    }
+    if (removed.isNotEmpty) notifierChange();
   }
 
   ///获取所有请求头
@@ -582,7 +1064,7 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
         child: Text(localizations.add, textAlign: TextAlign.center),
         onPressed: () {
           setState(() {
-            _params.add(KeyVal(TextEditingController(), TextEditingController()));
+            _params.add(KeyVal(TextEditingController(), EnvHighlightTextEditingController()));
           });
         },
       ));
@@ -621,13 +1103,103 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
     return list;
   }
 
-  Widget _cell(TextEditingController val, {bool isKey = false}) {
+  Widget _cell(KeyVal keyVal,
+      {bool isKey = false,
+      FocusNode? focusNode,
+      List<String>? suggestions,
+      Map<String, List<String>>? valueSuggestions}) {
+    TextEditingController textController = isKey ? keyVal.key : keyVal.value;
+
+    if (!widget.readOnly && (suggestions != null || valueSuggestions != null)) {
+      return Container(
+          padding: const EdgeInsets.only(right: 5),
+          child: RawAutocomplete<String>(
+            textEditingController: textController,
+            focusNode: focusNode,
+            optionsBuilder: (TextEditingValue textEditingValue) {
+              if (textEditingValue.text.isEmpty) {
+                return const Iterable<String>.empty();
+              }
+
+              var currentSuggestions = suggestions;
+              if (!isKey && valueSuggestions?.containsKey(keyVal.key.text) == true) {
+                currentSuggestions = valueSuggestions![keyVal.key.text];
+              }
+
+              if (currentSuggestions == null) {
+                return const Iterable<String>.empty();
+              }
+
+              return currentSuggestions.where((String option) {
+                return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+              });
+            },
+            onSelected: (String selection) {
+              textController.text = selection;
+              notifierChange();
+            },
+            fieldViewBuilder: (BuildContext context, TextEditingController textEditingController,
+                FocusNode fieldFocusNode, VoidCallback onFieldSubmitted) {
+              return TextFormField(
+                  controller: textEditingController,
+                  focusNode: fieldFocusNode,
+                  onFieldSubmitted: (String value) {
+                    onFieldSubmitted();
+                  },
+                  onChanged: (val) {
+                    if (isKey) setState(() {});
+                    notifierChange();
+                  },
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                      isDense: true,
+                      hintStyle: const TextStyle(color: Colors.grey),
+                      contentPadding: const EdgeInsets.fromLTRB(5, 13, 5, 13),
+                      focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5)),
+                      border: InputBorder.none,
+                      hintText: isKey ? "Key" : "Value"));
+            },
+            optionsViewBuilder:
+                (BuildContext context, AutocompleteOnSelected<String> onSelected, Iterable<String> options) {
+              return Align(
+                alignment: Alignment.topLeft,
+                child: Material(
+                  elevation: 4.0,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 200, maxWidth: 300),
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        final String option = options.elementAt(index);
+                        return InkWell(
+                          onTap: () {
+                            onSelected(option);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(10.0),
+                            child: _buildHighlightText(option, textController.text),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              );
+            },
+          ));
+    }
+
     return Container(
         padding: const EdgeInsets.only(right: 5),
         child: TextFormField(
             readOnly: widget.readOnly,
             style: TextStyle(fontSize: 13, fontWeight: isKey ? FontWeight.w500 : null),
-            controller: val,
+            controller: textController,
             onChanged: (val) => notifierChange(),
             minLines: 1,
             maxLines: 3,
@@ -644,6 +1216,16 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
   }
 
   Widget _row(KeyVal keyVal, Widget? op) {
+    if (widget.suggestions != null) {
+      keyVal.keyFocusNode ??= FocusNode();
+    }
+
+    Map<String, List<String>>? valueSuggestions;
+    if (widget.suggestions != null) {
+      keyVal.valueFocusNode ??= FocusNode();
+      valueSuggestions = HttpHeaders.commonHeaderValues;
+    }
+
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       if (op != null)
         Checkbox(
@@ -655,11 +1237,31 @@ class KeyValState extends State<KeyValWidget> with AutomaticKeepAliveClientMixin
               notifierChange();
             }),
       Container(width: 5),
-      Expanded(flex: 4, child: _cell(keyVal.key, isKey: true)),
+      Expanded(
+          flex: 4, child: _cell(keyVal, isKey: true, suggestions: widget.suggestions, focusNode: keyVal.keyFocusNode)),
       const Text(":", style: TextStyle(color: Colors.deepOrangeAccent)),
       const SizedBox(width: 8),
-      Expanded(flex: 6, child: _cell(keyVal.value)),
+      Expanded(flex: 6, child: _cell(keyVal, focusNode: keyVal.valueFocusNode, valueSuggestions: valueSuggestions)),
       op ?? const SizedBox()
     ]);
+  }
+
+  Widget _buildHighlightText(String text, String query) {
+    if (query.isEmpty) {
+      return Text(text);
+    }
+
+    int index = text.toLowerCase().indexOf(query.toLowerCase());
+    if (index < 0) {
+      return Text(text);
+    }
+
+    return Text.rich(TextSpan(children: [
+      TextSpan(text: text.substring(0, index)),
+      TextSpan(
+          text: text.substring(index, index + query.length),
+          style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+      TextSpan(text: text.substring(index + query.length))
+    ]));
   }
 }

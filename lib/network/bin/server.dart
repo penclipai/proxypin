@@ -20,6 +20,7 @@ import 'dart:io';
 import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/components/hosts.dart';
 import 'package:proxypin/network/components/interceptor.dart';
+import 'package:proxypin/network/components/network_condition.dart';
 import 'package:proxypin/network/components/report_server_interceptor.dart';
 import 'package:proxypin/network/components/request_block.dart';
 import 'package:proxypin/network/components/request_rewrite.dart';
@@ -35,6 +36,7 @@ import '../channel/network.dart';
 import '../util/logger.dart';
 import '../util/system_proxy.dart';
 import 'listener.dart';
+import 'package:proxypin/network/components/request_breakpoint.dart';
 
 Future<void> main() async {
   var configuration = await Configuration.instance;
@@ -92,6 +94,8 @@ class ProxyServer {
       ScriptInterceptor(),
       streamCodeInterceptor,
       RequestBlockInterceptor(),
+      RequestBreakpointInterceptor.instance, // Register the interceptor
+      NetworkConditionInterceptor.instance,
       ReportServerInterceptor()
     ];
 
@@ -165,5 +169,10 @@ class ProxyServer {
   ///添加监听器
   void addListener(EventListener listener) {
     listeners.add(listener);
+  }
+
+  ///移除监听器
+  void removeListener(EventListener listener) {
+    listeners.remove(listener);
   }
 }
