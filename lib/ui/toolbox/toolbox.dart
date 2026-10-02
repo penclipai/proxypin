@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
@@ -51,6 +53,17 @@ class _ToolboxState extends State<Toolbox> {
               Wrap(
                 spacing: 6,
                 children: [
+                  if (Platform.isWindows)
+                    IconText(
+                      icon: Icons.travel_explore,
+                      text: localizations.resourceSniffer,
+                      tooltip: localizations.resourceSniffer,
+                      onTap: () => MultiWindow.openWindow(
+                        localizations.resourceSniffer,
+                        'ResourceSnifferPage',
+                        size: const Size(1280, 800),
+                      ),
+                    ),
                   IconText(
                     icon: Icons.http,
                     text: "HTTP",

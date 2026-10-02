@@ -1,0 +1,34 @@
+ProxyPin resource preview: libmpv and FFmpeg
+
+ProxyPin uses libmpv through package:media_kit to decode resource thumbnails
+and inspect media information. ProxyPin's own source remains licensed under
+Apache License 2.0. The third-party shared library has its own licenses.
+
+The selected Windows x64 libmpv binary is the upstream media-kit LGPL build
+published on 2024-10-21, built with mpv -Dgpl=false and FFmpeg --disable-gpl,
+--disable-nonfree, --enable-version3. It is distributed under LGPL-3.0-or-later
+because it includes FFmpeg built with version 3 enabled. mpv itself is
+LGPL-2.1-or-later in this configuration. The package:media_kit Dart API is MIT.
+
+mpv copyright belongs to the mpv, MPlayer and mplayer2 contributors.
+FFmpeg copyright belongs to the FFmpeg contributors. Source file headers and
+the upstream repositories identify individual authors and copyright notices.
+These libraries are provided without warranty; see the enclosed license texts.
+
+License texts:
+  COPYING.LGPL-3.0.txt
+  COPYING.GPL-3.0.txt (the GPL text incorporated by LGPL version 3)
+  COPYING.LGPL-2.1.txt
+  MPV-COPYRIGHT.txt
+  FFMPEG-LICENSE.txt
+  MEDIA-KIT-LICENSE.txt
+
+libmpv-2.dll is loaded dynamically from the executable's directory. You may
+replace it with an interface-compatible modified build. Build-time download
+hashes do not prevent loading your modified DLL at runtime. No term in
+ProxyPin's license restricts modification of this library or reverse
+engineering of the application to debug such modifications.
+
+Pinned source, binary provenance and build instructions are in SOURCES.md.
+Additional library dependencies and their source/license references are listed
+in DEPENDENCIES.md. Keep this directory with every redistributed binary.

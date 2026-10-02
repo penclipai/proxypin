@@ -27,6 +27,7 @@ import 'package:proxypin/network/components/manager/request_map_manager.dart';
 import 'package:proxypin/network/components/manager/request_rewrite_manager.dart';
 import 'package:proxypin/network/components/manager/rewrite_rule.dart';
 import 'package:proxypin/network/components/manager/script_manager.dart';
+import 'package:proxypin/network/components/manager/resource_sniffer_manager.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/network/components/request_breakpoint.dart';
@@ -54,6 +55,7 @@ import '../toolbox/text_editor.dart';
 import '../toolbox/xml_viewer.dart';
 import '../toolbox/regexp.dart';
 import '../toolbox/stream_code_page.dart';
+import '../toolbox/resource_sniffer_page.dart';
 import '../toolbox/timestamp.dart';
 import '../toolbox/websocket_request.dart';
 
@@ -161,6 +163,10 @@ Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
     return StreamCodePage(windowId: windowId);
   }
 
+  if (argument['name'] == 'ResourceSnifferPage' && Platform.isWindows) {
+    return ResourceSnifferPage(windowId: windowId);
+  }
+
   //脚本日志
   if (argument['name'] == 'ScriptConsoleWidget') {
     return ScriptConsoleWidget(windowId: windowId);
@@ -231,8 +237,14 @@ class MultiWindow {
     if (!Platform.isMacOS) {
       window.setTitle(title);
     }
-    await window.center();
-    await window.setSize(Size(size.width * ratio, size.height * ratio));
+    if (Platform.isWindows && widgetName == 'ResourceSnifferPage') {
+      // Fit and position in the child engine so mixed-DPI monitors use one
+      // physical coordinate system and one window_manager conversion.
+      await window.fitAndCenterResourceSniffer(size);
+    } else {
+      await window.center();
+      await window.setSize(Size(size.width * ratio, size.height * ratio));
+    }
     await window.show();
 
     return window;
@@ -295,6 +307,12 @@ void registerMethodHandler() {
   _registerHandler = true;
   DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
     logger.d('${call.method} $fromWindowId');
+
+    if (call.method.startsWith('resourceSniffer')) {
+      final sniffer = ResourceSnifferManager.instance;
+      await sniffer.initialize();
+      return sniffer.handleCommand(call.method, Map<String, dynamic>.from(call.arguments as Map? ?? const {}));
+    }
 
     if (call.method == 'getProxyInfo') {
       return ProxyServer.current?.isRunning == true ? {'host': '127.0.0.1', 'port': ProxyServer.current!.port} : null;

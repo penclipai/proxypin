@@ -1417,6 +1417,219 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mcpPrivacyHint => '仅监听 127.0.0.1（本机），数据只有在 AI 客户端通过工具明确请求时才会离开本应用。';
+
+  @override
+  String get resourceSniffer => '资源嗅探';
+
+  @override
+  String get resourceSnifferSettings => '识别设置';
+
+  @override
+  String get resourceSnifferIncludeImages => '识别图片';
+
+  @override
+  String get resourceSnifferRules => '自定义识别规则';
+
+  @override
+  String get resourceSnifferRulesHint => '规则按顺序首次命中；未命中时使用内置识别。';
+
+  @override
+  String get resourceSnifferExtension => '扩展名';
+
+  @override
+  String get resourceSnifferUrlRegex => 'URL 正则表达式';
+
+  @override
+  String get resourceSnifferPattern => '匹配内容';
+
+  @override
+  String get resourceSnifferInvalidRule => '请输入匹配内容，URL 正则表达式必须有效。';
+
+  @override
+  String get resourceSnifferAudio => '音频';
+
+  @override
+  String get resourceSnifferVideo => '视频';
+
+  @override
+  String get resourceSnifferImage => '图片';
+
+  @override
+  String get resourceSnifferCategory => '分类';
+
+  @override
+  String get resourceSnifferSize => '大小';
+
+  @override
+  String get resourceSnifferCount => '次数';
+
+  @override
+  String get resourceSnifferLastSeen => '最近时间';
+
+  @override
+  String get resourceSnifferFirstSeen => '首次时间';
+
+  @override
+  String get resourceSnifferReason => '识别依据';
+
+  @override
+  String get resourceSnifferProcess => '进程';
+
+  @override
+  String get resourceSnifferUnknown => '未知';
+
+  @override
+  String get resourceSnifferPause => '暂停';
+
+  @override
+  String get resourceSnifferResume => '恢复';
+
+  @override
+  String get resourceSnifferPaused => '资源识别已暂停';
+
+  @override
+  String get resourceSnifferEmpty => '暂无匹配资源。请开启抓包并访问媒体页面。';
+
+  @override
+  String get resourceSnifferSelected => '已选择';
+
+  @override
+  String get resourceSnifferCopyLinks => '复制链接';
+
+  @override
+  String get resourceSnifferConnectionError => '无法连接主窗口';
+
+  @override
+  String get resourceSnifferRetry => '重试';
+
+  @override
+  String get resourceSnifferPrevious => '上一页';
+
+  @override
+  String get resourceSnifferNext => '下一页';
+
+  @override
+  String get resourceSnifferMoveUp => '上移';
+
+  @override
+  String get resourceSnifferMoveDown => '下移';
+
+  @override
+  String get resourceSnifferPreview => '预览';
+
+  @override
+  String get resourceSnifferPreviewHint => '点击预览时会访问资源 URL，加载首帧和媒体信息。';
+
+  @override
+  String get resourceSnifferPreviewLoading => '正在加载预览…';
+
+  @override
+  String get resourceSnifferPreviewFailed => '预览失败';
+
+  @override
+  String get resourceSnifferPreviewUnavailable => '此资源暂不支持预览';
+
+  @override
+  String get resourceSnifferPreviewWindowsOnly => '视频和音频预览目前仅支持 Windows';
+
+  @override
+  String get resourceSnifferResolution => '分辨率';
+
+  @override
+  String get resourceSnifferDuration => '时长';
+
+  @override
+  String get resourceSnifferCodec => '编码';
+
+  @override
+  String get resourceSnifferFrameRate => '帧率';
+
+  @override
+  String get resourceSnifferBitrate => '码率';
+
+  @override
+  String get resourceSnifferContainer => '格式';
+
+  @override
+  String get resourceSnifferVariants => '清单中的媒体';
+
+  @override
+  String get resourceSnifferManifestPreviewHint => '已读取清单信息；暂不加载媒体分片或首帧。';
+
+  @override
+  String get resourceSnifferPreviewIdle => '点击加载预览。';
+
+  @override
+  String get resourceSnifferPreviewTimeout => '预览超时，请重试。';
+
+  @override
+  String get resourceSnifferPreviewLimit => '资源读取量或图像尺寸超过预览限制。';
+
+  @override
+  String get resourceSnifferPreviewNetwork => '无法读取资源，请检查网络或链接是否已失效。';
+
+  @override
+  String get resourceSnifferPreviewCertificate => '资源的 HTTPS 证书无法验证。';
+
+  @override
+  String get resourceSnifferPreviewDecodeError => '播放器无法解码此媒体，或文件内容不完整。';
+
+  @override
+  String get resourceSnifferPreviewManifestError => '无法解析媒体清单。';
+
+  @override
+  String get resourceSnifferPreviewCancelled => '预览已取消。';
+
+  @override
+  String get resourceSnifferPreviewNotFound => '资源已不在列表中。';
+
+  @override
+  String get resourceSnifferPreviewBusy => '其他资源正在加载预览，请稍后重试。';
+
+  @override
+  String get resourceSnifferPreviewRangeError => '资源服务器未提供可用的字节范围。';
+
+  @override
+  String get resourceSnifferPreviewInvalidMediaHeader => '响应内容没有可识别的 MP4 文件头，可能经过加密、混淆或已损坏。';
+
+  @override
+  String get resourceSnifferPreviewCodecUnavailable => '无法加载媒体预览组件。';
+
+  @override
+  String get resourceSnifferPreviewProtectedMedia => '此资源需要原平台播放器提供媒体保护支持。';
+
+  @override
+  String get resourceSnifferPreviewDiagnosticStage => '错误阶段';
+
+  @override
+  String get resourceSnifferPreviewDiagnosticHttpStatus => 'HTTP 状态码';
+
+  @override
+  String get resourceSnifferPreviewDiagnosticNativeCode => 'Windows 错误码';
+
+  @override
+  String get resourceSnifferPreviewStageRequest => '请求资源';
+
+  @override
+  String get resourceSnifferPreviewStageRead => '读取响应正文';
+
+  @override
+  String get resourceSnifferPreviewStageManifest => '解析媒体清单';
+
+  @override
+  String get resourceSnifferPreviewStageImage => '解码图像';
+
+  @override
+  String get resourceSnifferPreviewStageMedia => '初始化媒体解码器';
+
+  @override
+  String get resourceSnifferPreviewStageSource => '识别媒体格式';
+
+  @override
+  String get resourceSnifferPreviewStageStream => '配置媒体流';
+
+  @override
+  String get resourceSnifferPreviewStageFrame => '读取首帧';
 }
 
 /// The translations for Chinese, using the Han script (`zh_Hant`).
@@ -2569,4 +2782,217 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get weakNetworkRules => 'URL 規則';
+
+  @override
+  String get resourceSniffer => '資源嗅探';
+
+  @override
+  String get resourceSnifferSettings => '識別設定';
+
+  @override
+  String get resourceSnifferIncludeImages => '識別圖片';
+
+  @override
+  String get resourceSnifferRules => '自訂識別規則';
+
+  @override
+  String get resourceSnifferRulesHint => '規則依序首次命中；未命中時使用內建識別。';
+
+  @override
+  String get resourceSnifferExtension => '副檔名';
+
+  @override
+  String get resourceSnifferUrlRegex => 'URL 正規表示式';
+
+  @override
+  String get resourceSnifferPattern => '比對內容';
+
+  @override
+  String get resourceSnifferInvalidRule => '請輸入比對內容，URL 正規表示式必須有效。';
+
+  @override
+  String get resourceSnifferAudio => '音訊';
+
+  @override
+  String get resourceSnifferVideo => '影片';
+
+  @override
+  String get resourceSnifferImage => '圖片';
+
+  @override
+  String get resourceSnifferCategory => '分類';
+
+  @override
+  String get resourceSnifferSize => '大小';
+
+  @override
+  String get resourceSnifferCount => '次數';
+
+  @override
+  String get resourceSnifferLastSeen => '最近時間';
+
+  @override
+  String get resourceSnifferFirstSeen => '首次時間';
+
+  @override
+  String get resourceSnifferReason => '識別依據';
+
+  @override
+  String get resourceSnifferProcess => '程序';
+
+  @override
+  String get resourceSnifferUnknown => '未知';
+
+  @override
+  String get resourceSnifferPause => '暫停';
+
+  @override
+  String get resourceSnifferResume => '恢復';
+
+  @override
+  String get resourceSnifferPaused => '資源識別已暫停';
+
+  @override
+  String get resourceSnifferEmpty => '暫無相符資源。請啟用擷取並開啟媒體頁面。';
+
+  @override
+  String get resourceSnifferSelected => '已選取';
+
+  @override
+  String get resourceSnifferCopyLinks => '複製連結';
+
+  @override
+  String get resourceSnifferConnectionError => '無法連線至主視窗';
+
+  @override
+  String get resourceSnifferRetry => '重試';
+
+  @override
+  String get resourceSnifferPrevious => '上一頁';
+
+  @override
+  String get resourceSnifferNext => '下一頁';
+
+  @override
+  String get resourceSnifferMoveUp => '上移';
+
+  @override
+  String get resourceSnifferMoveDown => '下移';
+
+  @override
+  String get resourceSnifferPreview => '預覽';
+
+  @override
+  String get resourceSnifferPreviewHint => '點擊預覽時會存取資源 URL，載入首幀與媒體資訊。';
+
+  @override
+  String get resourceSnifferPreviewLoading => '正在載入預覽…';
+
+  @override
+  String get resourceSnifferPreviewFailed => '預覽失敗';
+
+  @override
+  String get resourceSnifferPreviewUnavailable => '此資源暫不支援預覽';
+
+  @override
+  String get resourceSnifferPreviewWindowsOnly => '影片與音訊預覽目前僅支援 Windows';
+
+  @override
+  String get resourceSnifferResolution => '解析度';
+
+  @override
+  String get resourceSnifferDuration => '時長';
+
+  @override
+  String get resourceSnifferCodec => '編碼';
+
+  @override
+  String get resourceSnifferFrameRate => '影格率';
+
+  @override
+  String get resourceSnifferBitrate => '位元率';
+
+  @override
+  String get resourceSnifferContainer => '格式';
+
+  @override
+  String get resourceSnifferVariants => '清單中的媒體';
+
+  @override
+  String get resourceSnifferManifestPreviewHint => '已讀取清單資訊；暫不載入媒體片段或首幀。';
+
+  @override
+  String get resourceSnifferPreviewIdle => '點擊載入預覽。';
+
+  @override
+  String get resourceSnifferPreviewTimeout => '預覽逾時，請重試。';
+
+  @override
+  String get resourceSnifferPreviewLimit => '資源讀取量或圖像尺寸超過預覽限制。';
+
+  @override
+  String get resourceSnifferPreviewNetwork => '無法讀取資源，請檢查網路或連結是否已失效。';
+
+  @override
+  String get resourceSnifferPreviewCertificate => '資源的 HTTPS 憑證無法驗證。';
+
+  @override
+  String get resourceSnifferPreviewDecodeError => '播放器無法解碼此媒體，或檔案內容不完整。';
+
+  @override
+  String get resourceSnifferPreviewManifestError => '無法解析媒體清單。';
+
+  @override
+  String get resourceSnifferPreviewCancelled => '預覽已取消。';
+
+  @override
+  String get resourceSnifferPreviewNotFound => '資源已不在列表中。';
+
+  @override
+  String get resourceSnifferPreviewBusy => '其他資源正在載入預覽，請稍後重試。';
+
+  @override
+  String get resourceSnifferPreviewRangeError => '資源伺服器未提供可用的位元組範圍。';
+
+  @override
+  String get resourceSnifferPreviewInvalidMediaHeader => '回應內容沒有可識別的 MP4 檔案標頭，可能經過加密、混淆或已損壞。';
+
+  @override
+  String get resourceSnifferPreviewCodecUnavailable => '無法載入媒體預覽元件。';
+
+  @override
+  String get resourceSnifferPreviewProtectedMedia => '此資源需要原平台播放器提供媒體保護支援。';
+
+  @override
+  String get resourceSnifferPreviewDiagnosticStage => '錯誤階段';
+
+  @override
+  String get resourceSnifferPreviewDiagnosticHttpStatus => 'HTTP 狀態碼';
+
+  @override
+  String get resourceSnifferPreviewDiagnosticNativeCode => 'Windows 錯誤碼';
+
+  @override
+  String get resourceSnifferPreviewStageRequest => '請求資源';
+
+  @override
+  String get resourceSnifferPreviewStageRead => '讀取回應本文';
+
+  @override
+  String get resourceSnifferPreviewStageManifest => '解析媒體清單';
+
+  @override
+  String get resourceSnifferPreviewStageImage => '解碼圖像';
+
+  @override
+  String get resourceSnifferPreviewStageMedia => '初始化媒體解碼器';
+
+  @override
+  String get resourceSnifferPreviewStageSource => '識別媒體格式';
+
+  @override
+  String get resourceSnifferPreviewStageStream => '設定媒體串流';
+
+  @override
+  String get resourceSnifferPreviewStageFrame => '讀取首幀';
 }

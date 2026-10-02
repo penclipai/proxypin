@@ -16,6 +16,7 @@ and easy to use.
 * Request Decryption: Configure AES decryption key to automatically decrypt HTTP message body
 * Request Blocking: Support blocking requests according to URL, and do not send requests to the server.
 * History: Automatically save the captured traffic data for easy backtracking and viewing. Support HAR format export and import.
+* Resource Sniffer (Windows): Discover media from captured traffic, preview video frames and media information on demand, customize recognition rules, and copy or export resource lists. [Usage](docs/resource-sniffer.md).
 * Others: Favorites, toolbox, common encoding tools, as well as QR codes, regular expressions, etc.
 
 **Mac will prompt untrusted developers when first opened, you need to go to System Preferences-Security & Privacy-Allow any source.**

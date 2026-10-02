@@ -26,6 +26,7 @@ import 'package:proxypin/network/components/request_block.dart';
 import 'package:proxypin/network/components/request_rewrite.dart';
 import 'package:proxypin/network/components/script.dart';
 import 'package:proxypin/network/components/stream_code_interceptor.dart';
+import 'package:proxypin/network/components/manager/resource_sniffer_manager.dart';
 import 'package:proxypin/network/handle/http_proxy_handle.dart';
 import 'package:proxypin/network/util/crts.dart';
 import 'package:proxypin/utils/platform.dart';
@@ -81,6 +82,11 @@ class ProxyServer {
 
   /// 启动代理服务
   Future<Server> start() async {
+    if (Platform.isWindows) {
+      final sniffer = ResourceSnifferManager.instance;
+      await sniffer.initialize();
+      sniffer.attach(this);
+    }
     Server server = Server(configuration, listener: CombinedEventListener(listeners));
 
     // Initialize stream code interceptor

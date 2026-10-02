@@ -24,6 +24,7 @@ import 'package:proxypin/network/http/constants.dart';
 import 'package:proxypin/network/http/h2/h2_codec.dart';
 import 'package:proxypin/network/http/parse/http_parser.dart';
 import 'package:proxypin/network/util/byte_buf.dart';
+import 'package:proxypin/network/util/logger.dart';
 
 import 'http.dart';
 import 'http_headers.dart';
@@ -128,7 +129,7 @@ abstract class HttpCodec<T extends HttpMessage> implements Codec<T, T> {
     //请求头
     try {
       if (_state == State.readHeader) {
-        _readHeader(data, result.data!);
+        _readHeader(channelContext, data, result.data!);
       }
 
       //请求体
@@ -232,9 +233,19 @@ abstract class HttpCodec<T extends HttpMessage> implements Codec<T, T> {
   }
 
   //读取请求头
-  void _readHeader(ByteBuf data, T message) {
+  void _readHeader(ChannelContext channelContext, ByteBuf data, T message) {
     if (_httpParse.parseHeaders(data, message.headers)) {
       _state = State.body;
+      if (message is HttpResponse &&
+          message.status.code >= 200 &&
+          !pendingConnectResponse &&
+          channelContext.currentRequest?.method != HttpMethod.connect) {
+        try {
+          channelContext.listener?.onResponseHeaders(channelContext, message);
+        } catch (error, trace) {
+          logger.w('Response header observer failed', error: error, stackTrace: trace);
+        }
+      }
       bodyReader = BodyReader(message);
     }
   }

@@ -1429,4 +1429,222 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get mcpPrivacyHint =>
       'Only listens on 127.0.0.1 (this machine). Data leaves the app only when an AI client explicitly requests it via a tool.';
+
+  @override
+  String get resourceSniffer => 'Resource Sniffer';
+
+  @override
+  String get resourceSnifferSettings => 'Recognition settings';
+
+  @override
+  String get resourceSnifferIncludeImages => 'Recognize images';
+
+  @override
+  String get resourceSnifferRules => 'Custom recognition rules';
+
+  @override
+  String get resourceSnifferRulesHint => 'Rules run in order; the first match wins. Built-in recognition follows.';
+
+  @override
+  String get resourceSnifferExtension => 'Extension';
+
+  @override
+  String get resourceSnifferUrlRegex => 'URL regular expression';
+
+  @override
+  String get resourceSnifferPattern => 'Pattern';
+
+  @override
+  String get resourceSnifferInvalidRule => 'Enter a pattern; URL regular expressions must be valid.';
+
+  @override
+  String get resourceSnifferAudio => 'Audio';
+
+  @override
+  String get resourceSnifferVideo => 'Video';
+
+  @override
+  String get resourceSnifferImage => 'Image';
+
+  @override
+  String get resourceSnifferCategory => 'Category';
+
+  @override
+  String get resourceSnifferSize => 'Size';
+
+  @override
+  String get resourceSnifferCount => 'Hits';
+
+  @override
+  String get resourceSnifferLastSeen => 'Last seen';
+
+  @override
+  String get resourceSnifferFirstSeen => 'First seen';
+
+  @override
+  String get resourceSnifferReason => 'Recognition';
+
+  @override
+  String get resourceSnifferProcess => 'Process';
+
+  @override
+  String get resourceSnifferUnknown => 'Unknown';
+
+  @override
+  String get resourceSnifferPause => 'Pause';
+
+  @override
+  String get resourceSnifferResume => 'Resume';
+
+  @override
+  String get resourceSnifferPaused => 'Recognition paused';
+
+  @override
+  String get resourceSnifferEmpty => 'No matching resources yet. Enable capture and visit a media page.';
+
+  @override
+  String get resourceSnifferSelected => 'Selected';
+
+  @override
+  String get resourceSnifferCopyLinks => 'Copy links';
+
+  @override
+  String get resourceSnifferConnectionError => 'Unable to communicate with the main window';
+
+  @override
+  String get resourceSnifferRetry => 'Retry';
+
+  @override
+  String get resourceSnifferPrevious => 'Previous page';
+
+  @override
+  String get resourceSnifferNext => 'Next page';
+
+  @override
+  String get resourceSnifferMoveUp => 'Move up';
+
+  @override
+  String get resourceSnifferMoveDown => 'Move down';
+
+  @override
+  String get resourceSnifferPreview => 'Preview';
+
+  @override
+  String get resourceSnifferPreviewHint =>
+      'Click Preview to request the resource URL and load its first frame and media information.';
+
+  @override
+  String get resourceSnifferPreviewLoading => 'Loading preview…';
+
+  @override
+  String get resourceSnifferPreviewFailed => 'Preview failed';
+
+  @override
+  String get resourceSnifferPreviewUnavailable => 'Preview is unavailable for this resource';
+
+  @override
+  String get resourceSnifferPreviewWindowsOnly => 'Video and audio previews currently require Windows';
+
+  @override
+  String get resourceSnifferResolution => 'Resolution';
+
+  @override
+  String get resourceSnifferDuration => 'Duration';
+
+  @override
+  String get resourceSnifferCodec => 'Codec';
+
+  @override
+  String get resourceSnifferFrameRate => 'Frame rate';
+
+  @override
+  String get resourceSnifferBitrate => 'Bitrate';
+
+  @override
+  String get resourceSnifferContainer => 'Format';
+
+  @override
+  String get resourceSnifferVariants => 'Media in manifest';
+
+  @override
+  String get resourceSnifferManifestPreviewHint =>
+      'Manifest information loaded. Media segments and first frames are not loaded.';
+
+  @override
+  String get resourceSnifferPreviewIdle => 'Click to load a preview.';
+
+  @override
+  String get resourceSnifferPreviewTimeout => 'The preview timed out. Try again.';
+
+  @override
+  String get resourceSnifferPreviewLimit => 'The preview exceeds its data or image size limit.';
+
+  @override
+  String get resourceSnifferPreviewNetwork =>
+      'Unable to read the resource. Check the network or whether the link has expired.';
+
+  @override
+  String get resourceSnifferPreviewCertificate => 'The resource\'s HTTPS certificate could not be verified.';
+
+  @override
+  String get resourceSnifferPreviewDecodeError => 'The player could not decode the media, or the file is incomplete.';
+
+  @override
+  String get resourceSnifferPreviewManifestError => 'Unable to parse the media manifest.';
+
+  @override
+  String get resourceSnifferPreviewCancelled => 'The preview was cancelled.';
+
+  @override
+  String get resourceSnifferPreviewNotFound => 'The resource is no longer in the list.';
+
+  @override
+  String get resourceSnifferPreviewBusy => 'Another preview is loading. Try again shortly.';
+
+  @override
+  String get resourceSnifferPreviewRangeError => 'The server did not provide a usable byte range.';
+
+  @override
+  String get resourceSnifferPreviewInvalidMediaHeader =>
+      'The response has no recognizable MP4 file header. Its contents may be encrypted, obfuscated or damaged.';
+
+  @override
+  String get resourceSnifferPreviewCodecUnavailable => 'The media preview component could not be loaded.';
+
+  @override
+  String get resourceSnifferPreviewProtectedMedia =>
+      'This resource requires media protection support from its original player.';
+
+  @override
+  String get resourceSnifferPreviewDiagnosticStage => 'Failure stage';
+
+  @override
+  String get resourceSnifferPreviewDiagnosticHttpStatus => 'HTTP status';
+
+  @override
+  String get resourceSnifferPreviewDiagnosticNativeCode => 'Windows error code';
+
+  @override
+  String get resourceSnifferPreviewStageRequest => 'Requesting resource';
+
+  @override
+  String get resourceSnifferPreviewStageRead => 'Reading response body';
+
+  @override
+  String get resourceSnifferPreviewStageManifest => 'Parsing manifest';
+
+  @override
+  String get resourceSnifferPreviewStageImage => 'Decoding image';
+
+  @override
+  String get resourceSnifferPreviewStageMedia => 'Initializing media decoder';
+
+  @override
+  String get resourceSnifferPreviewStageSource => 'Recognizing media format';
+
+  @override
+  String get resourceSnifferPreviewStageStream => 'Configuring media stream';
+
+  @override
+  String get resourceSnifferPreviewStageFrame => 'Reading first frame';
 }

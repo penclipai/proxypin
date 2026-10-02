@@ -2871,6 +2871,432 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Only listens on 127.0.0.1 (this machine). Data leaves the app only when an AI client explicitly requests it via a tool.'**
   String get mcpPrivacyHint;
+
+  /// No description provided for @resourceSniffer.
+  ///
+  /// In en, this message translates to:
+  /// **'Resource Sniffer'**
+  String get resourceSniffer;
+
+  /// No description provided for @resourceSnifferSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Recognition settings'**
+  String get resourceSnifferSettings;
+
+  /// No description provided for @resourceSnifferIncludeImages.
+  ///
+  /// In en, this message translates to:
+  /// **'Recognize images'**
+  String get resourceSnifferIncludeImages;
+
+  /// No description provided for @resourceSnifferRules.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom recognition rules'**
+  String get resourceSnifferRules;
+
+  /// No description provided for @resourceSnifferRulesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Rules run in order; the first match wins. Built-in recognition follows.'**
+  String get resourceSnifferRulesHint;
+
+  /// No description provided for @resourceSnifferExtension.
+  ///
+  /// In en, this message translates to:
+  /// **'Extension'**
+  String get resourceSnifferExtension;
+
+  /// No description provided for @resourceSnifferUrlRegex.
+  ///
+  /// In en, this message translates to:
+  /// **'URL regular expression'**
+  String get resourceSnifferUrlRegex;
+
+  /// No description provided for @resourceSnifferPattern.
+  ///
+  /// In en, this message translates to:
+  /// **'Pattern'**
+  String get resourceSnifferPattern;
+
+  /// No description provided for @resourceSnifferInvalidRule.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a pattern; URL regular expressions must be valid.'**
+  String get resourceSnifferInvalidRule;
+
+  /// No description provided for @resourceSnifferAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio'**
+  String get resourceSnifferAudio;
+
+  /// No description provided for @resourceSnifferVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get resourceSnifferVideo;
+
+  /// No description provided for @resourceSnifferImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get resourceSnifferImage;
+
+  /// No description provided for @resourceSnifferCategory.
+  ///
+  /// In en, this message translates to:
+  /// **'Category'**
+  String get resourceSnifferCategory;
+
+  /// No description provided for @resourceSnifferSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get resourceSnifferSize;
+
+  /// No description provided for @resourceSnifferCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Hits'**
+  String get resourceSnifferCount;
+
+  /// No description provided for @resourceSnifferLastSeen.
+  ///
+  /// In en, this message translates to:
+  /// **'Last seen'**
+  String get resourceSnifferLastSeen;
+
+  /// No description provided for @resourceSnifferFirstSeen.
+  ///
+  /// In en, this message translates to:
+  /// **'First seen'**
+  String get resourceSnifferFirstSeen;
+
+  /// No description provided for @resourceSnifferReason.
+  ///
+  /// In en, this message translates to:
+  /// **'Recognition'**
+  String get resourceSnifferReason;
+
+  /// No description provided for @resourceSnifferProcess.
+  ///
+  /// In en, this message translates to:
+  /// **'Process'**
+  String get resourceSnifferProcess;
+
+  /// No description provided for @resourceSnifferUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get resourceSnifferUnknown;
+
+  /// No description provided for @resourceSnifferPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause'**
+  String get resourceSnifferPause;
+
+  /// No description provided for @resourceSnifferResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get resourceSnifferResume;
+
+  /// No description provided for @resourceSnifferPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Recognition paused'**
+  String get resourceSnifferPaused;
+
+  /// No description provided for @resourceSnifferEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching resources yet. Enable capture and visit a media page.'**
+  String get resourceSnifferEmpty;
+
+  /// No description provided for @resourceSnifferSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected'**
+  String get resourceSnifferSelected;
+
+  /// No description provided for @resourceSnifferCopyLinks.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy links'**
+  String get resourceSnifferCopyLinks;
+
+  /// No description provided for @resourceSnifferConnectionError.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to communicate with the main window'**
+  String get resourceSnifferConnectionError;
+
+  /// No description provided for @resourceSnifferRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get resourceSnifferRetry;
+
+  /// No description provided for @resourceSnifferPrevious.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous page'**
+  String get resourceSnifferPrevious;
+
+  /// No description provided for @resourceSnifferNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next page'**
+  String get resourceSnifferNext;
+
+  /// No description provided for @resourceSnifferMoveUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Move up'**
+  String get resourceSnifferMoveUp;
+
+  /// No description provided for @resourceSnifferMoveDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Move down'**
+  String get resourceSnifferMoveDown;
+
+  /// No description provided for @resourceSnifferPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get resourceSnifferPreview;
+
+  /// No description provided for @resourceSnifferPreviewHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Click Preview to request the resource URL and load its first frame and media information.'**
+  String get resourceSnifferPreviewHint;
+
+  /// No description provided for @resourceSnifferPreviewLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading preview…'**
+  String get resourceSnifferPreviewLoading;
+
+  /// No description provided for @resourceSnifferPreviewFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview failed'**
+  String get resourceSnifferPreviewFailed;
+
+  /// No description provided for @resourceSnifferPreviewUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview is unavailable for this resource'**
+  String get resourceSnifferPreviewUnavailable;
+
+  /// No description provided for @resourceSnifferPreviewWindowsOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Video and audio previews currently require Windows'**
+  String get resourceSnifferPreviewWindowsOnly;
+
+  /// No description provided for @resourceSnifferResolution.
+  ///
+  /// In en, this message translates to:
+  /// **'Resolution'**
+  String get resourceSnifferResolution;
+
+  /// No description provided for @resourceSnifferDuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Duration'**
+  String get resourceSnifferDuration;
+
+  /// No description provided for @resourceSnifferCodec.
+  ///
+  /// In en, this message translates to:
+  /// **'Codec'**
+  String get resourceSnifferCodec;
+
+  /// No description provided for @resourceSnifferFrameRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Frame rate'**
+  String get resourceSnifferFrameRate;
+
+  /// No description provided for @resourceSnifferBitrate.
+  ///
+  /// In en, this message translates to:
+  /// **'Bitrate'**
+  String get resourceSnifferBitrate;
+
+  /// No description provided for @resourceSnifferContainer.
+  ///
+  /// In en, this message translates to:
+  /// **'Format'**
+  String get resourceSnifferContainer;
+
+  /// No description provided for @resourceSnifferVariants.
+  ///
+  /// In en, this message translates to:
+  /// **'Media in manifest'**
+  String get resourceSnifferVariants;
+
+  /// No description provided for @resourceSnifferManifestPreviewHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Manifest information loaded. Media segments and first frames are not loaded.'**
+  String get resourceSnifferManifestPreviewHint;
+
+  /// No description provided for @resourceSnifferPreviewIdle.
+  ///
+  /// In en, this message translates to:
+  /// **'Click to load a preview.'**
+  String get resourceSnifferPreviewIdle;
+
+  /// No description provided for @resourceSnifferPreviewTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'The preview timed out. Try again.'**
+  String get resourceSnifferPreviewTimeout;
+
+  /// No description provided for @resourceSnifferPreviewLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'The preview exceeds its data or image size limit.'**
+  String get resourceSnifferPreviewLimit;
+
+  /// No description provided for @resourceSnifferPreviewNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to read the resource. Check the network or whether the link has expired.'**
+  String get resourceSnifferPreviewNetwork;
+
+  /// No description provided for @resourceSnifferPreviewCertificate.
+  ///
+  /// In en, this message translates to:
+  /// **'The resource\'s HTTPS certificate could not be verified.'**
+  String get resourceSnifferPreviewCertificate;
+
+  /// No description provided for @resourceSnifferPreviewDecodeError.
+  ///
+  /// In en, this message translates to:
+  /// **'The player could not decode the media, or the file is incomplete.'**
+  String get resourceSnifferPreviewDecodeError;
+
+  /// No description provided for @resourceSnifferPreviewManifestError.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to parse the media manifest.'**
+  String get resourceSnifferPreviewManifestError;
+
+  /// No description provided for @resourceSnifferPreviewCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'The preview was cancelled.'**
+  String get resourceSnifferPreviewCancelled;
+
+  /// No description provided for @resourceSnifferPreviewNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'The resource is no longer in the list.'**
+  String get resourceSnifferPreviewNotFound;
+
+  /// No description provided for @resourceSnifferPreviewBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Another preview is loading. Try again shortly.'**
+  String get resourceSnifferPreviewBusy;
+
+  /// No description provided for @resourceSnifferPreviewRangeError.
+  ///
+  /// In en, this message translates to:
+  /// **'The server did not provide a usable byte range.'**
+  String get resourceSnifferPreviewRangeError;
+
+  /// No description provided for @resourceSnifferPreviewInvalidMediaHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'The response has no recognizable MP4 file header. Its contents may be encrypted, obfuscated or damaged.'**
+  String get resourceSnifferPreviewInvalidMediaHeader;
+
+  /// No description provided for @resourceSnifferPreviewCodecUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The media preview component could not be loaded.'**
+  String get resourceSnifferPreviewCodecUnavailable;
+
+  /// No description provided for @resourceSnifferPreviewProtectedMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'This resource requires media protection support from its original player.'**
+  String get resourceSnifferPreviewProtectedMedia;
+
+  /// No description provided for @resourceSnifferPreviewDiagnosticStage.
+  ///
+  /// In en, this message translates to:
+  /// **'Failure stage'**
+  String get resourceSnifferPreviewDiagnosticStage;
+
+  /// No description provided for @resourceSnifferPreviewDiagnosticHttpStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'HTTP status'**
+  String get resourceSnifferPreviewDiagnosticHttpStatus;
+
+  /// No description provided for @resourceSnifferPreviewDiagnosticNativeCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows error code'**
+  String get resourceSnifferPreviewDiagnosticNativeCode;
+
+  /// No description provided for @resourceSnifferPreviewStageRequest.
+  ///
+  /// In en, this message translates to:
+  /// **'Requesting resource'**
+  String get resourceSnifferPreviewStageRequest;
+
+  /// No description provided for @resourceSnifferPreviewStageRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading response body'**
+  String get resourceSnifferPreviewStageRead;
+
+  /// No description provided for @resourceSnifferPreviewStageManifest.
+  ///
+  /// In en, this message translates to:
+  /// **'Parsing manifest'**
+  String get resourceSnifferPreviewStageManifest;
+
+  /// No description provided for @resourceSnifferPreviewStageImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Decoding image'**
+  String get resourceSnifferPreviewStageImage;
+
+  /// No description provided for @resourceSnifferPreviewStageMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'Initializing media decoder'**
+  String get resourceSnifferPreviewStageMedia;
+
+  /// No description provided for @resourceSnifferPreviewStageSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Recognizing media format'**
+  String get resourceSnifferPreviewStageSource;
+
+  /// No description provided for @resourceSnifferPreviewStageStream.
+  ///
+  /// In en, this message translates to:
+  /// **'Configuring media stream'**
+  String get resourceSnifferPreviewStageStream;
+
+  /// No description provided for @resourceSnifferPreviewStageFrame.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading first frame'**
+  String get resourceSnifferPreviewStageFrame;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

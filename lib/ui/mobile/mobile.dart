@@ -108,6 +108,9 @@ class MobileHomeState extends State<MobileHomePage> implements EventListener, Li
   }
 
   @override
+  void onResponseHeaders(ChannelContext channelContext, HttpResponse response) {}
+
+  @override
   void onResponse(ChannelContext channelContext, HttpResponse response) {
     MobileApp.requestStateKey.currentState!.addResponse(channelContext, response);
     NetworkTabController.current?.updateResponse(response);

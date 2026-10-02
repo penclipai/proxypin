@@ -15,7 +15,7 @@ releases:
           platform: windows
           target: exe
           build_args:
-            profile: true
+            release: true
 
       - name: windows-msix
         package:

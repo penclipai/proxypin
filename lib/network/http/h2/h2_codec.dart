@@ -33,6 +33,25 @@ import '../../util/byte_utils.dart';
 import 'frame.dart';
 import 'hpack/hpack.dart';
 
+class _PendingHeaderBlock {
+  final FrameHeader header;
+  final BytesBuilder fragments = BytesBuilder();
+  final BytesBuilder wire = BytesBuilder();
+  int packageSize = 0;
+
+  _PendingHeaderBlock(this.header);
+
+  void add(FrameHeader frameHeader, List<int> fragment, List<int> framePayload) {
+    if (wire.length + FrameReader.headerLength + framePayload.length > Codec.defaultMaxInitialLineLength) {
+      throw ParserException('HTTP/2 header block too long');
+    }
+    fragments.add(fragment);
+    wire.add(frameHeader.encode());
+    wire.add(framePayload);
+    packageSize += frameHeader.length;
+  }
+}
+
 /// http编解码
 abstract class Http2Codec<T extends HttpMessage> implements Codec<T, T> {
   static const maxFrameSize = 16384;
@@ -57,6 +76,7 @@ abstract class Http2Codec<T extends HttpMessage> implements Codec<T, T> {
   // HEADERS 帧记录了 END_STREAM=1 但还没 END_HEADERS 的 stream。
   // CONTINUATION 完成时用来判定"其实没 body"，避免激活 streaming 让远端空等。
   final Set<int> _headerEndStreamPending = {};
+  final Map<int, _PendingHeaderBlock> _pendingHeaderBlocks = {};
 
   @override
   DecoderResult<T> decode(ChannelContext channelContext, ByteBuf byteBuf, {bool resolveBody = true}) {
@@ -97,7 +117,14 @@ abstract class Http2Codec<T extends HttpMessage> implements Codec<T, T> {
         return result;
       }
 
-      var parseResult = parseHttp2Packet(channelContext, frameHeader, framePayload);
+      late DecoderResult<T> parseResult;
+      try {
+        parseResult = parseHttp2Packet(channelContext, frameHeader, framePayload);
+      } catch (_) {
+        _pendingHeaderBlocks.remove(frameHeader.streamIdentifier);
+        _headerEndStreamPending.remove(frameHeader.streamIdentifier);
+        rethrow;
+      }
       if (parseResult.forward != null) {
         forward ??= [];
         forward.addAll(parseResult.forward!);
@@ -126,6 +153,8 @@ abstract class Http2Codec<T extends HttpMessage> implements Codec<T, T> {
         //处理HEADERS帧
         var headersFrame = _handleHeadersFrame(channelContext, frameHeader, ByteBuf(framePayload));
         result.isDone = frameHeader.hasEndStreamFlag && frameHeader.hasEndHeadersFlag;
+        final block = _PendingHeaderBlock(frameHeader)
+          ..add(frameHeader, headersFrame.headerBlockFragment, framePayload);
         if (headersFrame.streamDependency != null) {
           headersFrame.headerBlockFragment = [];
           channelContext.put(frameHeader.streamIdentifier, headersFrame);
@@ -136,16 +165,17 @@ abstract class Http2Codec<T extends HttpMessage> implements Codec<T, T> {
           _headerEndStreamPending.add(frameHeader.streamIdentifier);
         }
 
+        // HPACK fields can span arbitrary frame boundaries. Decode the complete
+        // block once, so neither a literal nor the dynamic table is decoded twice.
+        if (!frameHeader.hasEndHeadersFlag) {
+          _pendingHeaderBlocks[frameHeader.streamIdentifier] = block;
+          break;
+        }
+        final isInitialHeaders = _readHeaderBlock(channelContext, block);
+
         //handle special case for SSE
         var possibleMessage = getMessage(channelContext, frameHeader);
-        if (possibleMessage is HttpResponse &&
-            possibleMessage.headers.contentType.toLowerCase().startsWith('text/event-stream')) {
-          result.forward = List.from(frameHeader.encode())..addAll(framePayload);
-          result.data = possibleMessage;
-          var currentRequest = channelContext.getStreamRequest(frameHeader.streamIdentifier);
-          currentRequest?.response = possibleMessage;
-          possibleMessage.request ??= channelContext.currentRequest;
-          channelContext.listener?.onResponse(channelContext, possibleMessage);
+        if (_handleSseHeaders(channelContext, possibleMessage, block, result, isInitialHeaders)) {
           return result;
         }
 
@@ -162,31 +192,29 @@ abstract class Http2Codec<T extends HttpMessage> implements Codec<T, T> {
         break;
       case FrameType.continuation:
         //处理CONTINUATION帧
-        var message = getMessage(channelContext, frameHeader);
-        if (message == null) {
-          logger.e("CONTINUATION frame but no message found");
+        final block = _pendingHeaderBlocks[frameHeader.streamIdentifier];
+        if (block == null) {
+          logger.e("CONTINUATION frame but no header block found");
           result.forward = List.from(frameHeader.encode())..addAll(framePayload);
           return result;
         }
 
-        Map<String, List<String>> headers = _parseHeaders(channelContext, framePayload);
-        headers.forEach((key, values) => message.headers.addValues(key, values));
-        message.packageSize = (message.packageSize ?? 0) + frameHeader.length;
-        if (frameHeader.hasEndHeadersFlag &&
-            channelContext.getStreamRequest(frameHeader.streamIdentifier)?.method == HttpMethod.head) {
-          result.isDone = true;
-        }
+        block.add(frameHeader, framePayload, framePayload);
+        if (!frameHeader.hasEndHeadersFlag) break;
+        _pendingHeaderBlocks.remove(frameHeader.streamIdentifier);
+        final isInitialHeaders = _readHeaderBlock(channelContext, block);
+        final message = getMessage(channelContext, frameHeader);
 
         // content-length 有可能落在 CONTINUATION 帧里，等 END_HEADERS 后再判一次。
         // 注意：CONTINUATION 帧 flags 里的 END_STREAM 不合法，必须查原始 HEADERS 帧的状态。
-        if (frameHeader.hasEndHeadersFlag) {
-          bool originalEndStream = _headerEndStreamPending.remove(frameHeader.streamIdentifier);
-          if (originalEndStream) {
-            // 原始 HEADERS 带 END_STREAM：headers 收全即请求完成，无 body
-            result.isDone = true;
-          } else if (_tryStartStreamingUpload(channelContext, frameHeader, message, result)) {
-            return result;
-          }
+        bool originalEndStream = _headerEndStreamPending.remove(frameHeader.streamIdentifier);
+        result.isDone = originalEndStream ||
+            channelContext.getStreamRequest(frameHeader.streamIdentifier)?.method == HttpMethod.head;
+        if (_handleSseHeaders(channelContext, message, block, result, isInitialHeaders)) {
+          return result;
+        }
+        if (!originalEndStream && _tryStartStreamingUpload(channelContext, frameHeader, message, result)) {
+          return result;
         }
 
         break;
@@ -235,6 +263,7 @@ abstract class Http2Codec<T extends HttpMessage> implements Codec<T, T> {
         return result;
       case FrameType.rstStream:
         // stream 中断：清理 streaming upload 标记，避免泄漏
+        _pendingHeaderBlocks.remove(frameHeader.streamIdentifier);
         _headerEndStreamPending.remove(frameHeader.streamIdentifier);
         if (_largeBodyStreamIds.remove(frameHeader.streamIdentifier)) {
           logger.w("[${channelContext.clientChannel?.id}] h2 streaming stream:${frameHeader.streamIdentifier} reset");
@@ -509,10 +538,20 @@ abstract class Http2Codec<T extends HttpMessage> implements Codec<T, T> {
 
     var blockFragment = payload.readBytes(headerBlockLength);
 
-    //读取头部信息
-    Map<String, List<String>> headers = _parseHeaders(channelContext, blockFragment);
+    return HeadersFrame(frameHeader, padLength, exclusiveDependency, streamDependency, weight, blockFragment);
+  }
 
-    T message = createMessage(channelContext, frameHeader, headers);
+  /// Returns whether this block starts a message, rather than carrying trailers.
+  bool _readHeaderBlock(ChannelContext channelContext, _PendingHeaderBlock block) {
+    final frameHeader = block.header;
+    final headers = _parseHeaders(channelContext, block.fragments.takeBytes());
+    final isInitialHeaders = headers.containsKey(this is Http2ResponseDecoder ? ':status' : ':method');
+    final message = isInitialHeaders
+        ? createMessage(channelContext, frameHeader, headers)
+        : getMessage(channelContext, frameHeader);
+    if (message == null) {
+      throw ParserException('HTTP/2 trailers without an associated message');
+    }
 
     headers.forEach((key, values) {
       if (!key.startsWith(":")) {
@@ -521,8 +560,34 @@ abstract class Http2Codec<T extends HttpMessage> implements Codec<T, T> {
     });
 
     message.streamId = frameHeader.streamIdentifier;
-    message.packageSize = frameHeader.length;
-    return HeadersFrame(frameHeader, padLength, exclusiveDependency, streamDependency, weight, blockFragment);
+    message.packageSize = (isInitialHeaders ? 0 : message.packageSize ?? 0) + block.packageSize;
+    if (isInitialHeaders &&
+        message is HttpResponse &&
+        message.status.code >= 200 &&
+        message.request?.method != HttpMethod.connect) {
+      try {
+        channelContext.listener?.onResponseHeaders(channelContext, message);
+      } catch (error, trace) {
+        logger.w('Response header observer failed', error: error, stackTrace: trace);
+      }
+    }
+    return isInitialHeaders;
+  }
+
+  bool _handleSseHeaders(ChannelContext channelContext, HttpMessage? message, _PendingHeaderBlock block,
+      DecoderResult<T> result, bool isInitialHeaders) {
+    if (message is! HttpResponse || !message.headers.contentType.toLowerCase().startsWith('text/event-stream')) {
+      return false;
+    }
+    result.forward = block.wire.takeBytes();
+    result.data = message as T;
+    if (isInitialHeaders) {
+      var currentRequest = channelContext.getStreamRequest(block.header.streamIdentifier);
+      currentRequest?.response = message;
+      message.request ??= channelContext.currentRequest;
+      channelContext.listener?.onResponse(channelContext, message);
+    }
+    return true;
   }
 
   Map<String, List<String>> _parseHeaders(ChannelContext channelContext, List<int> payload) {

@@ -72,6 +72,9 @@ endif()
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
+# Mature FFmpeg/libmpv decoding for resource thumbnails and media information.
+include(cmake/resource_preview_libmpv.cmake)
+
 # Ship the Visual C++ runtime next to the executable (app-local deployment).
 #
 # Why: since VS 2022 17.10 the STL constructs std::mutex inline via a constexpr
